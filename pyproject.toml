@@ -1,0 +1,248 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "django-chain"
+version = "0.0.1"
+description = "A Django-based library for seamless LLM integration"
+readme = "README.md"
+requires-python = ">=3.9"
+license = "MIT"
+authors = [
+    { name = "Brian Kariu", email = "waiganjo.brian@gmail.com" }
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Framework :: Django",
+    "Framework :: Django :: 4.2",
+    "Framework :: Django :: 5.0",
+]
+dependencies = [
+    "Django>=4.0",
+    "langchain>=0.1.0",
+    "langchain-core>=0.1.0",
+    "langchain-community>=0.1.0",  # Required for fake embeddings and other integrations
+    "python-decouple>=3.8",
+    "psycopg2-binary>=2.9.0",
+]
+
+[project.optional-dependencies]
+openai = ["langchain-openai>=0.1.0"]
+google = ["langchain-google-genai>=0.1.0"]
+huggingface = ["langchain-huggingface>=0.1.0"]
+pgvector = ["langchain-community>=0.1.0", "pgvector>=0.1.0"]
+chroma = ["langchain-community>=0.1.0", "chromadb>=0.4.0"]
+pinecone = ["langchain-pinecone>=0.1.0"]
+celery = [
+    "celery>=5.0",
+    "django-celery-results>=2.0",
+    "django-celery-beat>=2.0"
+]
+sentry = ["sentry-sdk>=1.0"]
+all = [
+    "langchain-openai>=0.1.0",
+    "langchain-google-genai>=0.1.0",
+    "langchain-huggingface>=0.1.0",
+    "langchain-community>=0.1.0",
+    "pgvector>=0.1.0",
+    "chromadb>=0.4.0",
+    "langchain-pinecone>=0.1.0",
+    "celery>=5.0",
+    "django-celery-results>=2.0",
+    "django-celery-beat>=2.0",
+    "sentry-sdk>=1.0",
+]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-django>=4.5.0",
+    "pytest-cov>=4.1.0",
+    "pytest-asyncio>=0.21.0",
+    "coverage>=7.0.0",
+    "factory-boy>=3.3.0",
+    "faker>=18.0.0",
+    "ruff>=0.1.0",
+    "mypy>=1.5.1",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["django_chain"]
+include = [
+    "django_chain/templates/**/*",
+    "django_chain/static/**/*",
+    "py.typed",
+]
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.ruff]
+select = ["ALL"]
+ignore = [
+    "D",  # pydocstyle
+    "E501",  # line too long
+    "FBT",  # boolean trap
+    "I001",  # isort
+    "N",  # pep8-naming
+    "PT",  # pytest
+    "RUF",  # ruff-specific rules
+    "S",  # bandit
+    "T",  # flake8-debugger
+    "W",  # pycodestyle
+    "YTT",  # flake8-2020
+    "ANN",  # flake8-annotations
+    "ARG",  # flake8-unused-arguments
+    "B",  # flake8-bugbear
+    "C4",  # flake8-comprehensions
+    "COM",  # flake8-commas
+    "DTZ",  # flake8-datetimez
+    "ERA",  # eradicate
+    "F",  # pyflakes
+    "ICN",  # flake8-import-conventions
+    "ISC",  # flake8-implicit-str-concat
+    "G",  # flake8-logging-format
+    "INP",  # flake8-no-pep420
+    "INT",  # flake8-gettext
+    "N",  # pep8-naming
+    "PIE",  # flake8-pie
+    "TID",  # flake8-tidy-imports
+    "TCH",  # flake8-type-checking
+    "UP",  # pyupgrade
+    "PL",  # pylint
+    "Q",  # flake8-quotes
+    "SIM",  # flake8-simplify
+    "TID",  # flake8-tidy-imports
+    "TCH",  # flake8-type-checking
+    "ARG",  # flake8-unused-arguments
+    "PTH",  # flake8-use-pathlib
+    "ERA",  # eradicate
+    "PD",  # pandas-vet
+    "PGH",  # pygrep-hooks
+    "PL",  # pylint
+    "PT",  # pytest
+    "PYI",  # flake8-pyi
+    "RUF",  # ruff-specific rules
+    "S",  # bandit
+    "T",  # flake8-debugger
+    "TID",  # flake8-tidy-imports
+    "UP",  # pyupgrade
+    "W",  # pycodestyle
+    "YTT",  # flake8-2020
+    "RET",  # flake8-return
+    "TRY",  # flake8-try-except
+    "EM",  # flake8-errmsg
+    "FA",  # flake8-future-annotations
+    "DJ",  # flake8-django
+    "TD",  # flake8-todos
+    "FIX",  # flake8-fixme
+    "BLE",  # flake8-blind-except
+    "SLF",  # flake8-self
+    "E402",  # module level import not at top of file
+]
+
+line-length = 100
+target-version = "py39"
+
+[tool.ruff.isort]
+known-first-party = ["django_chain", "test_project", "testapp"]
+known-third-party = ["django", "celery", "langchain", "langchain_core", "langchain_openai", "langchain_google_genai", "langchain_community"]
+combine-as-imports = true
+force-wrap-aliases = true
+force-single-line = true
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "auto"
+skip-magic-trailing-comma = false
+
+[tool.ruff.per-file-ignores]
+"tests/*" = ["ALL"]
+"django_chain/admin.py" = ["ALL"]
+"django_chain/views.py" = ["ALL"]
+"django_chain/models/*.py" = ["ALL"]
+"django_chain/services/*.py" = ["ALL"]
+"django_chain/llm_integrations/*.py" = ["ALL"]
+"django_chain/vector_db_integrations/*.py" = ["ALL"]
+"django_chain/management/commands/*.py" = ["ALL"]
+"django_chain/memory.py" = ["ALL"]
+
+[tool.mypy]
+python_version = "3.9"
+warn_return_any = true
+warn_unused_configs = true
+check_untyped_defs = false
+disallow_untyped_decorators = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+warn_unreachable = true
+strict_optional = true
+explicit_package_bases = true
+namespace_packages = true
+ignore_missing_imports = true
+ignore_errors = true
+
+[[tool.mypy.overrides]]
+module = [
+    "django.*",
+    "celery.*",
+    "langchain.*",
+    "langchain_core.*",
+    "langchain_openai.*",
+    "langchain_google_genai.*",
+    "langchain_community.*",
+    "test_project.*",
+    "testapp.*",
+    "django_chain.*",
+    "tests.*"
+]
+ignore_missing_imports = true
+ignore_errors = true
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "tests.test_project.settings"
+python_files = ["test_*.py", "*_test.py"]
+addopts = "-v --cov=django_chain --cov-report=term-missing"
+testpaths = ["tests"]
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    "ignore::django.utils.deprecation.RemovedInDjango50Warning",
+]
+
+[tool.coverage.run]
+source = ["django_chain"]
+omit = [
+    "tests/*",
+    "setup.py",
+    "docs/*",
+    "*.pyc",
+    "*.pyo",
+    "*.pyd",
+    ".git/*",
+    "*.so",
+    "*.egg",
+    "*.egg-info",
+    "*.egg-info/*",
+    "build/*",
+    "dist/*",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "if self.debug:",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "pass",
+    "raise ImportError",
+]
