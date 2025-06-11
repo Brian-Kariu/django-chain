@@ -10,7 +10,7 @@ from django.conf import settings
 
 from django_chain.exceptions import LLMProviderAPIError, MissingDependencyError
 from django_chain.llm_integrations import get_chat_model, get_embedding_model
-from django_chain.models import get_llm_interaction_log_model
+from django_chain.models.logs import LLMInteractionLog
 
 logger = logging.getLogger(__name__)
 
@@ -67,7 +67,6 @@ class LLMClient:
                     latency_ms = int((time.time() - start_time) * 1000)
 
                     # Log successful interaction
-                    LLMInteractionLog = get_llm_interaction_log_model()
                     LLMInteractionLog.objects.create(
                         prompt_text=str(args[0]) if args else str(kwargs.get("input", "")),
                         response_text=response.content,
@@ -82,7 +81,6 @@ class LLMClient:
                     latency_ms = int((time.time() - start_time) * 1000)
 
                     # Log failed interaction
-                    LLMInteractionLog = get_llm_interaction_log_model()
                     LLMInteractionLog.objects.create(
                         prompt_text=str(args[0]) if args else str(kwargs.get("input", "")),
                         model_name=model.model_name,

@@ -2,7 +2,6 @@
 Admin interface for django-chain.
 """
 
-
 from django.contrib import admin
 from django.urls import reverse
 from django.utils.html import format_html
@@ -100,7 +99,7 @@ class LLMInteractionLogAdmin(admin.ModelAdmin):
         "model_name",
         "input_tokens",
         "output_tokens",
-        "cost",
+        "total_cost",
         "status",
         "created_at",
     )
