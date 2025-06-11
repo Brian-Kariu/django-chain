@@ -2,7 +2,6 @@
 Test models for integration testing.
 """
 
-
 from django.db import models
 
 

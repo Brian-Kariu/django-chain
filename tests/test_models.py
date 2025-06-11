@@ -1,7 +1,8 @@
 import pytest
 from django.test import TestCase
 
-from django_chain.models import Chain, ChatMessage, ChatSession, get_llm_chain_model
+from django_chain.models.chains import LLMChain
+from django_chain.models.chat import ChatMessage, ChatSession
 
 
 class TestLLMChain(TestCase):
@@ -45,7 +46,7 @@ class TestLLMChain(TestCase):
 @pytest.mark.django_db()
 def test_chain_model() -> None:
     """Test Chain model."""
-    chain = Chain.objects.create(
+    chain = LLMChain.objects.create(
         name="Test Chain",
         prompt_template="Test template",
         model_name="gpt-3.5-turbo",

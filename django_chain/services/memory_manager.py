@@ -5,11 +5,11 @@ Memory manager service for handling chat history.
 import logging
 from typing import Any, Optional
 
+from django_chain.models.chat import ChatMessage
 from langchain.memory import ConversationBufferMemory, ConversationBufferWindowMemory
 from langchain_core.messages import AIMessage, HumanMessage
 
 from django_chain.exceptions import ChainExecutionError
-from django_chain.models import get_chat_message_model
 
 logger = logging.getLogger(__name__)
 
@@ -88,7 +88,6 @@ class MemoryManager:
             messages: The list of LangChain messages to save
         """
         try:
-            ChatMessage = get_chat_message_model()
             role_map = {
                 "human": "user",
                 "ai": "ai",

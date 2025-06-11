@@ -84,6 +84,10 @@ include = [
 allow-direct-references = true
 
 [tool.ruff]
+line-length = 100
+target-version = "py39"
+
+[tool.ruff.lint]
 select = ["ALL"]
 ignore = [
     "D",  # pydocstyle
@@ -147,10 +151,7 @@ ignore = [
     "E402",  # module level import not at top of file
 ]
 
-line-length = 100
-target-version = "py39"
-
-[tool.ruff.isort]
+[tool.ruff.lint.isort]
 known-first-party = ["django_chain", "test_project", "testapp"]
 known-third-party = ["django", "celery", "langchain", "langchain_core", "langchain_openai", "langchain_google_genai", "langchain_community"]
 combine-as-imports = true
@@ -163,7 +164,7 @@ indent-style = "space"
 line-ending = "auto"
 skip-magic-trailing-comma = false
 
-[tool.ruff.per-file-ignores]
+[tool.ruff.lint.per-file-ignores]
 "tests/*" = ["ALL"]
 "django_chain/admin.py" = ["ALL"]
 "django_chain/views.py" = ["ALL"]

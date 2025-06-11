@@ -54,28 +54,22 @@ class ChainExecutor:
             ChainExecutionError: If there's an error executing the chain
         """
         try:
-            # Get the chain
             LLMChain = apps.get_model("django_chain", "LLMChain")
             chain = LLMChain.objects.get(id=chain_id)
 
-            # Get the LangChain chain
             langchain_chain = chain.get_chain(self.llm_client)
 
-            # Add memory if session is provided
             if session:
                 memory = get_langchain_memory(session)
                 langchain_chain.memory = memory
 
-            # Execute the chain
             start_time = time.time()
             output = langchain_chain.run(**input_data)
             end_time = time.time()
 
-            # Save messages to session if provided
             if session and hasattr(langchain_chain, "memory"):
                 save_messages_to_session(session, langchain_chain.memory.chat_memory.messages)
 
-            # Log the interaction
             LLMInteractionLog.objects.create(
                 user=user,
                 prompt_text=str(input_data),

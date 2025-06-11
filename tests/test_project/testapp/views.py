@@ -10,10 +10,8 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 
 from django_chain.memory import get_langchain_memory, save_messages_to_session
-from django_chain.models import (
-    get_chat_session_model,
-    get_llm_chain_model,
-)
+from django_chain.models.chains import LLMChain
+from django_chain.models.chat import ChatSession
 from django_chain.services.chain_executor import ChainExecutor
 from django_chain.services.llm_client import LLMClient
 from django_chain.services.vector_store_manager import VectorStoreManager
@@ -36,9 +34,6 @@ def test_llm_call(request) -> JsonResponse:
 def test_chain_execution(request) -> JsonResponse:
     """Test chain execution."""
     try:
-        # Get the LLMChain model
-        LLMChain = get_llm_chain_model()
-
         # Create a test chain
         chain = LLMChain.objects.create(
             name="test_chain",
@@ -60,9 +55,6 @@ def test_chain_execution(request) -> JsonResponse:
 def test_chat_session(request) -> JsonResponse:
     """Test chat session creation and message handling."""
     try:
-        # Get the ChatSession model
-        ChatSession = get_chat_session_model()
-
         # Create a chat session
         session = ChatSession.objects.create(
             title="Test Chat", llm_config={"model_name": "fake-model"}
