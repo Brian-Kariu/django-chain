@@ -9,8 +9,8 @@ from typing import Any, Optional
 from django.conf import settings
 
 from django_chain.exceptions import LLMProviderAPIError, MissingDependencyError
-from django_chain.llm_integrations import get_chat_model, get_embedding_model
-from django_chain.models.logs import LLMInteractionLog
+from django_chain.providers import get_chat_model, get_embedding_model
+from django_chain.models import LLMInteractionLog
 
 logger = logging.getLogger(__name__)
 
@@ -35,10 +35,16 @@ class LLMClient:
             LLMProviderAPIError: If provider configuration is invalid
         """
         llm_settings = settings.DJANGO_LLM_SETTINGS
-        provider = provider or llm_settings.get("DEFAULT_LLM_PROVIDER", "openai")
-        default_chat_config = llm_settings.get("DEFAULT_CHAT_MODEL", {})
+        provider = provider or llm_settings.get("DEFAULT_LLM_PROVIDER", "fake")
+        default_chat_config = llm_settings.get(
+            "DEFAULT_CHAT_MODEL",
+            {
+                "name": "fake-model",
+                "temperature": 0.7,
+                "max_tokens": 1024,
+            },
+        )
 
-        # Get API key for the provider
         api_key = llm_settings.get(f"{provider.upper()}_API_KEY")
         if not api_key and provider != "fake":
             raise LLMProviderAPIError(
@@ -46,7 +52,6 @@ class LLMClient:
             )
 
         try:
-            # Get model configuration
             model_config = {
                 "api_key": api_key,
                 "model_name": kwargs.get("model_name") or default_chat_config.get("name"),

@@ -11,7 +11,7 @@ from django.conf import settings
 
 from django_chain.exceptions import ChainExecutionError
 from django_chain.memory import get_langchain_memory, save_messages_to_session
-from django_chain.models.logs import LLMInteractionLog
+from django_chain.models import LLMInteractionLog
 from django_chain.services.llm_client import LLMClient
 
 logger = logging.getLogger(__name__)

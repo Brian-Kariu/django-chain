@@ -6,9 +6,9 @@ from django.contrib import admin
 from django.urls import reverse
 from django.utils.html import format_html
 
-from django_chain.models.chains import LLMChain
-from django_chain.models.chat import ChatMessage, ChatSession
-from django_chain.models.logs import LLMInteractionLog
+from django_chain.models import LLMChain
+from django_chain.models import ChatMessage, ChatSession
+from django_chain.models import LLMInteractionLog
 
 
 @admin.register(LLMChain)

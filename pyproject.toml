@@ -70,6 +70,7 @@ dev = [
     "faker>=18.0.0",
     "ruff>=0.1.0",
     "mypy>=1.5.1",
+    "model_bakery>=1.20.5",
 ]
 
 [tool.hatch.build.targets.wheel]
@@ -157,6 +158,9 @@ known-third-party = ["django", "celery", "langchain", "langchain_core", "langcha
 combine-as-imports = true
 force-wrap-aliases = true
 force-single-line = true
+
+[tool.ruff.lint.flake8-builtins]
+builtins-ignorelist = ["id","type"]
 
 [tool.ruff.format]
 quote-style = "double"

@@ -2,7 +2,27 @@
 Test models for integration testing.
 """
 
+import uuid
 from django.db import models
+from django_chain.models import OutputParsers, Prompt
+
+
+class TestPrompt(Prompt):
+    created_at = models.DateTimeField(auto_now_add=True)
+
+
+class Joke(models.Model):
+    id = models.UUIDField(default=uuid.uuid4, editable=False, unique=True, primary_key=True)
+    setup = models.CharField(
+        max_length=255, null=False, blank=False, help_text="Question to setup joke"
+    )
+    punchline = models.CharField(
+        max_length=255, null=False, blank=False, help_text="Answer to resolve the joke"
+    )
+
+
+class TestOutputParser(OutputParsers):
+    output_model = models.OneToOneField(Joke, on_delete=models.CASCADE, null=False, blank=False)
 
 
 class TestDocument(models.Model):

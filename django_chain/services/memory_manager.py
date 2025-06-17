@@ -5,7 +5,7 @@ Memory manager service for handling chat history.
 import logging
 from typing import Any, Optional
 
-from django_chain.models.chat import ChatMessage
+from django_chain.models import ChatMessage
 from langchain.memory import ConversationBufferMemory, ConversationBufferWindowMemory
 from langchain_core.messages import AIMessage, HumanMessage
 
