@@ -11,7 +11,6 @@ class TestAppConfig(AppConfig):
     """
 
     name = "tests.test_project.testapp"
-    label = "testapp"
     verbose_name = "Test Application"
 
     def ready(self):

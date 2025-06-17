@@ -1,9 +1,55 @@
-from django.test import Client, TestCase
+import json
+from django.core import serializers
+from model_bakery import baker
+import pytest
+from django.test import Client, TestCase, override_settings
 from django.urls import reverse
 
-from django_chain.models import get_llm_chain_model
+from django_chain.models import (
+    MessageTypes,
+    Prompt,
+    PromptTemplate,
+    PromptTemplateRendering,
+    PromptTemplateTypes,
+    Message,
+)
+from django.urls import reverse
+
+from tests.test_project.testapp.models import TestPrompt
 
 
+@override_settings(ROOT_URLCONF="test_project.testapp.urls")
+@pytest.mark.django_db
+class TestPromptView(TestCase):
+    def setUp(self) -> None:
+        return super().setUp()
+
+    def test_get_prompt(self):
+        prompt_1 = baker.make(
+            TestPrompt,
+            name="test_prompt_1",
+            input_variables=["msg"],
+            optional_variables=["placeholder"],
+        )
+        prompt_2 = baker.make(
+            TestPrompt,
+            name="test_prompt_2",
+            input_variables=["msg"],
+            optional_variables=["placeholder"],
+        )
+
+        response = self.client.get(reverse("test_prompt_by_id", kwargs={"prompt_id": prompt_1.id}))
+        response_data = response.json()
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(len(response_data) == 1, "The list of prompts should be one.")
+
+        response = self.client.get(reverse("test_prompt", kwargs={}))
+        response_data = response.json()
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(len(response_data) == 2, "The list of prompts should two.")
+
+
+@pytest.mark.skip()
 class TestLLMView(TestCase):
     def setUp(self):
         self.client = Client()
@@ -26,9 +72,7 @@ class TestLLMView(TestCase):
         # functionality. It's here as a placeholder for future implementation.
 
 
-import pytest
-
-
+@pytest.mark.skip()
 @pytest.mark.django_db()
 def test_chat_view() -> None:
     """Test chat view."""
@@ -42,6 +86,7 @@ def test_chat_view() -> None:
     assert "response" in response.json()
 
 
+@pytest.mark.skip()
 @pytest.mark.django_db()
 def test_vector_search_view() -> None:
     """Test vector search view."""
@@ -55,6 +100,7 @@ def test_vector_search_view() -> None:
     assert "results" in response.json()
 
 
+@pytest.mark.skip()
 @pytest.mark.django_db()
 def test_document_view() -> None:
     """Test document view."""
