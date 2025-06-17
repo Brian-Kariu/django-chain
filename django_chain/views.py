@@ -21,6 +21,8 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 from django.views import View
 
+from django_chain.models import Prompt
+
 from .services.llm_client import LLMClient
 from .services.vector_store_manager import VectorStoreManager
 
