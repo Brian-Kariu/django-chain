@@ -6,8 +6,29 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 from django.views.generic import View
 
+from django_chain.models import Prompt
+
 from .services.llm_client import LLMClient
 from .services.vector_store_manager import VectorStoreManager
+
+
+class PromptView(View):
+    def post(self, request, *args, **kwargs):
+        prompt_data = self.kwargs["data"]
+        if prompt_data is None:
+            return JsonResponse({"No data passed"})
+
+        prompt = Prompt.object.create(**prompt_data)
+        return JsonResponse({"data": prompt})
+
+    def get(self, request, *args, **kwargs):
+        prompt_id = self.kwargs["prompt_id"]
+        if prompt_id is None:
+            prompts = Prompt.objects.all()
+            return JsonResponse({"data": prompts})
+
+        prompt = Prompt.objects.filter(id=prompt_id).first()
+        return JsonResponse({"data": prompt})
 
 
 class LLMView(View):

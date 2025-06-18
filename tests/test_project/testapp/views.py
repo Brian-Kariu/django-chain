@@ -5,18 +5,52 @@ Test views for integration testing.
 import json
 from typing import Any
 
+from django.core import serializers
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 
 from django_chain.memory import get_langchain_memory, save_messages_to_session
-from django_chain.models.chains import LLMChain
-from django_chain.models.chat import ChatSession
+from django_chain.models import LLMChain
+from django_chain.models import ChatSession
 from django_chain.services.chain_executor import ChainExecutor
 from django_chain.services.llm_client import LLMClient
 from django_chain.services.vector_store_manager import VectorStoreManager
 
-from .models import TestDocument
+from tests.test_project.testapp.models import TestDocument, TestPrompt
+
+from django_chain.views import PromptView
+
+
+class TestAppPrompts(PromptView):
+    # TODO: Add post, update, delete
+    def get(self, request, prompt_id=None, *args, **kwargs) -> JsonResponse:
+        if prompt_id is None:
+            prompts = TestPrompt.objects.all().values(
+                "id",
+                "guid",
+                "name",
+                "template",
+                "input_variables",
+                "optional_variables",
+                "created_at",
+            )
+            return JsonResponse(list(prompts), safe=False)
+
+        prompt = (
+            TestPrompt.objects.filter(id=prompt_id)
+            .all()
+            .values(
+                "id",
+                "guid",
+                "name",
+                "template",
+                "input_variables",
+                "optional_variables",
+                "created_at",
+            )
+        )
+        return JsonResponse(list(prompt), safe=False)
 
 
 @require_http_methods(["POST"])
