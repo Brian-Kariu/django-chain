@@ -24,7 +24,7 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "django_chain",
-    "tests.test_project.testapp",
+    "examples.vanilla_django.example",
 ]
 
 MIDDLEWARE = [
@@ -37,7 +37,7 @@ MIDDLEWARE = [
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 
-ROOT_URLCONF = "test_project.urls"
+ROOT_URLCONF = "vanilla_django.urls"
 
 TEMPLATES = [
     {
@@ -55,7 +55,7 @@ TEMPLATES = [
     },
 ]
 
-WSGI_APPLICATION = "test_project.wsgi.application"
+WSGI_APPLICATION = "vanilla_django.wsgi.application"
 
 # Database
 DATABASES = {
@@ -100,6 +100,7 @@ DJANGO_LLM_SETTINGS = {
         "name": "fake-model",
         "temperature": 0.7,
         "max_tokens": 1024,
+        "api_key": "fake key",
     },
     "DEFAULT_EMBEDDING_MODEL": {
         "provider": "fake",
@@ -145,7 +146,7 @@ LOGGING = {
             "level": "DEBUG",
             "propagate": True,
         },
-        "tests.test_project": {
+        "examples.vanilla_django": {
             "handlers": ["console"],
             "level": "DEBUG",
             "propagate": True,

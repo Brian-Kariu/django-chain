@@ -153,7 +153,7 @@ ignore = [
 ]
 
 [tool.ruff.lint.isort]
-known-first-party = ["django_chain", "test_project", "testapp"]
+known-first-party = ["django_chain", "vanilla_django", "example"]
 known-third-party = ["django", "celery", "langchain", "langchain_core", "langchain_openai", "langchain_google_genai", "langchain_community"]
 combine-as-imports = true
 force-wrap-aliases = true
@@ -205,8 +205,8 @@ module = [
     "langchain_openai.*",
     "langchain_google_genai.*",
     "langchain_community.*",
-    "test_project.*",
-    "testapp.*",
+    "vanilla_djang.*",
+    "example.*",
     "django_chain.*",
     "tests.*"
 ]
@@ -214,7 +214,7 @@ ignore_missing_imports = true
 ignore_errors = true
 
 [tool.pytest.ini_options]
-DJANGO_SETTINGS_MODULE = "tests.test_project.settings"
+DJANGO_SETTINGS_MODULE = "examples.vanilla_django.settings"
 python_files = ["test_*.py", "*_test.py"]
 addopts = "-v --cov=django_chain --cov-report=term-missing"
 testpaths = ["tests"]

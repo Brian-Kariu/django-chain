@@ -30,19 +30,19 @@ def get_chat_model(provider: str, **kwargs) -> BaseChatModel:
         ValueError: If the provider is not supported
     """
     if provider == "openai":
-        from .openai import get_openai_chat_model
+        from django_chain.providers.openai import get_openai_chat_model
 
         return get_openai_chat_model(**kwargs)
     elif provider == "google":
-        from .google import get_google_chat_model
+        from django_chain.providers.google import get_google_chat_model
 
         return get_google_chat_model(**kwargs)
     elif provider == "huggingface":
-        from .huggingface import get_huggingface_chat_model
+        from django_chain.providers.huggingface import get_huggingface_chat_model
 
         return get_huggingface_chat_model(**kwargs)
     elif provider == "fake":
-        from .fake import get_fake_chat_model
+        from django_chain.providers.fake import get_fake_chat_model
 
         return get_fake_chat_model(**kwargs)
     else:
@@ -65,19 +65,19 @@ def get_embedding_model(provider: str, **kwargs) -> Embeddings:
         ValueError: If the provider is not supported
     """
     if provider == "openai":
-        from .openai import get_openai_embedding_model
+        from django_chain.providers.openai import get_openai_embedding_model
 
         return get_openai_embedding_model(**kwargs)
     elif provider == "google":
-        from .google import get_google_embedding_model
+        from django_chain.providers.google import get_google_embedding_model
 
         return get_google_embedding_model(**kwargs)
     elif provider == "huggingface":
-        from .huggingface import get_huggingface_embedding_model
+        from django_chain.providers.huggingface import get_huggingface_embedding_model
 
         return get_huggingface_embedding_model(**kwargs)
     elif provider == "fake":
-        from .fake import get_fake_embedding_model
+        from django_chain.providers.fake import get_fake_embedding_model
 
         return get_fake_embedding_model(**kwargs)
     else:

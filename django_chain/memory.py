@@ -34,19 +34,14 @@ def get_langchain_memory(
         ChainExecutionError: If there's an error creating the memory
     """
     try:
-        # Get messages from the session
         chat_messages = session.messages.order_by("timestamp", "order").all()
         history = []
 
-        # Convert Django messages to LangChain messages
         for msg in chat_messages:
             if msg.role == "user":
                 history.append(HumanMessage(content=msg.content))
             elif msg.role == "ai":
                 history.append(AIMessage(content=msg.content))
-            # Add other roles as needed
-
-        # Create the appropriate memory type
         if memory_type == "buffer":
             memory = ConversationBufferMemory(return_messages=True)
         elif memory_type == "buffer_window":
@@ -54,7 +49,6 @@ def get_langchain_memory(
         else:
             raise ValueError(f"Unsupported memory type: {memory_type}")
 
-        # Add messages to memory
         for msg in history:
             if isinstance(msg, HumanMessage):
                 memory.chat_memory.add_user_message(msg.content)
@@ -93,7 +87,7 @@ def save_messages_to_session(
                 role = role_map.get(msg.get("type", "human"), "user")
                 content = msg.get("content", "")
             else:
-                role = role_map.get(msg.type, "user")  # Default to user if type unknown
+                role = role_map.get(msg.type, "user")
                 content = msg.content
 
             ChatMessage.objects.create(
@@ -103,7 +97,7 @@ def save_messages_to_session(
                 order=session.messages.count() + i,
             )
 
-        session.save()  # Update updated_at timestamp
+        session.save()
 
     except Exception as e:
         logger.error(f"Error saving messages: {e}", exc_info=True)
