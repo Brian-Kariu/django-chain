@@ -5,11 +5,6 @@ Test models for integration testing.
 import uuid
 
 from django.db import models
-from django_chain.models import OutputParsers, Prompt
-
-
-class TestPrompt(Prompt):
-    created_at = models.DateTimeField(auto_now_add=True)
 
 
 class Joke(models.Model):
