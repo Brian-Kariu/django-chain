@@ -1,5 +1,6 @@
 # Django Chain
 A Django library for seamless LangChain integration, making it easy to add LLM capabilities to your Django applications.
+This is a reusable Django application that provides a robust framework for defining, managing, and executing multi-step Large Language Model (LLM) workflows. It offers a set of API endpoints to interact with prompts, workflows, and their execution, enabling dynamic LLM applications without direct code changes for each new workflow.
 
 [![python](https://img.shields.io/badge/Python-3.12-3776AB.svg?style=flat&logo=python&logoColor=white)](https://www.python.org)
 [![pre-commit](https://img.shields.io/badge/pre--commit-enabled-brightgreen?logo=pre-commit&logoColor=white)](https://github.com/pre-commit/pre-commit)
@@ -10,11 +11,20 @@ A Django library for seamless LangChain integration, making it easy to add LLM c
 
 ## Features
 
+- Dynamic prompt and workflow management out of the box
 - Easy integration with existing Django models and views
 - Built-in utilities for common LLM tasks
 - Type-safe and well-documented API
 - Comprehensive test coverage
 - Production-ready with proper error handling
+
+## Core Concepts
+- Prompt: Represents a configurable template for generating LLM prompts. This can be a HumanMessagePromptTemplate, SystemMessagePromptTemplate, or ChatPromptTemplate.
+- Workflow: A sequence of ordered steps, each defining an action to be performed (e.g., format a prompt, call an LLM, parse JSON output, use a tool). Workflows orchestrate the flow of data through these steps.
+
+## Prerequisites
+1. Python 3.8+
+2. Django 4.0+
 
 ## Installation
 
@@ -32,25 +42,56 @@ INSTALLED_APPS = [
 ]
 ```
 
-## Quick Start
+Add you LLM model configurations:
 
 ```python
-from django_chain.models import LLMChain
-from django_chain.views import LLMView
+DJANGO_LLM_SETTINGS = {
+    "DEFAULT_LLM_PROVIDER": "fake",
+    "DEFAULT_CHAT_MODEL": {
+        "name": "fake-model",
+        "temperature": 0.7,
+        "max_tokens": 1024,
+        "api_key": "fake key",
+    },
+    "DEFAULT_EMBEDDING_MODEL": {
+        "provider": "fake",
+        "name": "fake-embedding",
+    },
+    "VECTOR_STORE": {
+        "TYPE": "pgvector",
+        "PGVECTOR_COLLECTION_NAME": "test_documents",
+    },
+    "ENABLE_LLM_LOGGING": True,
+    "LLM_LOGGING_LEVEL": "DEBUG",
+    "MEMORY": {
+        "DEFAULT_TYPE": "buffer",
+        "WINDOW_SIZE": 5,
+    },
+    "CHAIN": {
+        "DEFAULT_OUTPUT_PARSER": "str",
+        "ENABLE_MEMORY": True,
+    },
+    "CACHE_LLM_RESPONSES": True,
+    "CACHE_TTL_SECONDS": 3600,
+}
+```
 
-# Create a chain
-chain = LLMChain.objects.create(
-    name="my_chain",
-    prompt_template="Answer the following question: {question}",
-    model_name="gpt-3.5-turbo"
-)
+Run migrations:
+```bash
+python manage.py makemigrations django_chain
+python manage.py migrate django_chain
+```
 
-# Use in a view
-class MyLLMView(LLMView):
-    chain = chain
+## Quick Start
+Add these urls to your app:
+```python
+# your_project/urls.py
+from django.contrib import admin
+from django.urls import path, include
 
-    def get_prompt_context(self, request):
-        return {"question": request.GET.get("question", "")}
+urlpatterns = [
+    path('api/', include('django_chain.urls')), # Or your chosen app name
+]
 ```
 
 ## Development
