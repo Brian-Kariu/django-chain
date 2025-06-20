@@ -16,6 +16,23 @@ from langchain_core.output_parsers import StrOutputParser
 
 from django_chain.exceptions import DjangoChainError
 from django_chain.exceptions import PromptValidationError
+from django_chain.utils.chain_client import chat_workflow
+
+try:
+    from langchain_core.messages import AIMessage
+    from langchain_core.messages import BaseMessage
+    from langchain_core.messages import HumanMessage
+    from langchain_core.messages import SystemMessage
+    from langchain_core.prompts import AIMessagePromptTemplate
+    from langchain_core.prompts import ChatPromptTemplate
+    from langchain_core.prompts import HumanMessagePromptTemplate
+    from langchain_core.prompts import PromptTemplate
+    from langchain_core.prompts import SystemMessagePromptTemplate
+
+    LANGCHAIN_AVAILABLE = True
+except ImportError:
+    LANGCHAIN_AVAILABLE = False
+    print("Warning: LangChain is not installed. Prompt conversion functionality will be disabled.")
 
 User = get_user_model()
 LOGGER = logging.getLogger(__name__)
@@ -29,7 +46,6 @@ class PromptTemplateTypes(models.TextChoices):
 
     PROMPT_TEMPLATE = "PROMPT_TEMPLATE", _("String Prompt Template")
     CHAT_PROMPT_TEMPLATE = "CHAT_PROMPT_TEMPLATE", _("Chat Prompt Template")
-    MESSAGE_PLACEHOLDER = "MESSAGE_PLACEHOLDER", _("Message Placeholder")
 
 
 class PromptTemplateRendering(models.TextChoices):
@@ -38,6 +54,11 @@ class PromptTemplateRendering(models.TextChoices):
 
 
 class MessageTypes(models.TextChoices):
+    STRING = "STRING", _("String Message")
+    MESSAGEPLACEHOLDER = "MESSAGEPLACEHOLDER", _("Placeholder message")
+
+
+class RoleTypes(models.TextChoices):
     BASE = "FROM_STRINGS", _("Base Message")
     HUMAN = "HUMAN", _("Human Message")
     AI = "AI", _("AI Message")
@@ -51,34 +72,30 @@ class ParserTypes(models.TextChoices):
     STRING = "STRING", _("String parser")
 
 
-class PromptTemplate(models.Model):
-    id = models.UUIDField(default=uuid.uuid4, editable=False, unique=True, primary_key=True)
-    guid = models.UUIDField(unique=True, null=True, blank=True)
-    template = models.CharField(
-        max_length=20,
-        choices=PromptTemplateTypes,
-        null=False,
-        blank=False,
-        default=PromptTemplateTypes.PROMPT_TEMPLATE,
-    )
-    rendering = models.CharField(
-        max_length=20,
-        choices=PromptTemplateRendering,
-        null=True,
-        blank=True,
-        default=PromptTemplateRendering.FROM_STRINGS,
-    )
-
-    def __str__(self) -> str:
-        return str(self.template)
+class ChainTypes(models.TextChoices):
+    CHAT = "CHAT", _("Chat chain")
 
 
 class Prompt(models.Model):
     id = models.UUIDField(default=uuid.uuid4, editable=False, unique=True, primary_key=True)
     guid = models.UUIDField(unique=True, null=True, blank=True)
+    type = models.CharField(
+        max_length=20,
+        choices=PromptTemplateTypes.choices,
+        default=PromptTemplateTypes.CHAT_PROMPT_TEMPLATE,
+        null=False,
+        blank=False,
+    )
     name = models.CharField(max_length=255, unique=True, null=False)
     # TODO: Consider moving template to messages
-    template = models.ForeignKey(PromptTemplate, on_delete=models.PROTECT, null=False, blank=False)
+    prompt_template = models.JSONField(
+        default=dict(),
+        help_text=_(
+            "JSON representation of the LangChain prompt. Must include 'langchain_type' (e.g., 'PromptTemplate', 'ChatPromptTemplate')."
+        ),
+    )
+    version = models.PositiveIntegerField(default=1, null=False, blank=False)
+    is_active = models.BooleanField(default=False)
     input_variables = models.JSONField(
         help_text="Input variables to the prompt", blank=True, null=True
     )
@@ -86,29 +103,169 @@ class Prompt(models.Model):
         help_text="Input variables to the prompt", blank=True, null=True
     )
 
+    class Meta:
+        verbose_name = _("Prompt")
+        verbose_name_plural = _("Prompts")
+        unique_together = (("name", "version"), ("name", "is_active"))
+        ordering = ["name", "-version"]
+
     def __str__(self) -> str:
-        return str(self.name)
+        return f"{self.name} v{self.version} ({'Active' if self.is_active else 'Inactive'})"
 
-    def clean(self, *args, **kwargs):
-        messages = self.messages.all()
+    def clean(self):
+        super().clean()
+        if self.is_active:
+            active_prompts = Prompt.objects.filter(name=self.name, is_active=True)
+            if self.pk:
+                active_prompts = active_prompts.exclude(pk=self.pk)
+            if active_prompts.exists():
+                raise ValidationError(
+                    _(
+                        "There can only be one active prompt per name. "
+                        "Please deactivate the existing active prompt before setting this one as active."
+                    ),
+                    code="duplicate_active_prompt",
+                )
 
-        # Check if prompts have atleast one message
-        if messages is None or messages == []:
-            raise PromptValidationError
-        super().clean(*args, **kwargs)
+        # Validate prompt_template structure for conversion
+        if not isinstance(self.prompt_template, dict):
+            raise ValidationError(
+                _("Prompt template must be a JSON object."), code="invalid_prompt_template_format"
+            )
+        if "langchain_type" not in self.prompt_template:
+            raise ValidationError(
+                _(
+                    "Prompt template JSON must contain a 'langchain_type' key (e.g., 'PromptTemplate', 'ChatPromptTemplate')."
+                ),
+                code="missing_langchain_type",
+            )
 
     def save(self, *args, **kwargs):
+        self.full_clean()
         super().save(*args, **kwargs)
+
+    @classmethod
+    def create_new_version(
+        cls, name, prompt_template, description="", input_variables=None, activate=True
+    ):
+        max_version = cls.objects.filter(name=name).aggregate(max("version"))["version__max"]
+        new_version_number = (max_version or 0) + 1
+
+        new_prompt = cls(
+            name=name,
+            version=new_version_number,
+            prompt_template=prompt_template,
+            description=description,
+            input_variables=input_variables,
+            is_active=activate,
+        )
+        new_prompt.full_clean()
+
+        if activate:
+            cls.objects.filter(name=name, is_active=True).update(is_active=False)
+
+        new_prompt.save()
+        return new_prompt
+
+    def activate(self):
+        Prompt.objects.filter(name=self.name, is_active=True).exclude(pk=self.pk).update(
+            is_active=False
+        )
+        self.is_active = True
+        self.save()
+
+    def deactivate(self):
+        self.is_active = False
+        self.save()
+
+    def get_prompt_content(self):
+        return self.prompt_template
+
+    def get_input_variables(self):
+        return self.input_variables if self.input_variables is not None else []
+
+    def to_langchain_prompt(self):  # noqa: C901
+        """
+        Converts the stored JSON prompt_template into an actual LangChain prompt object.
+        """
+        if not LANGCHAIN_AVAILABLE:
+            raise ImportError(
+                "LangChain library is not installed. Cannot convert to LangChain prompt object."
+            )
+
+        prompt_data = self.prompt_template
+        langchain_type = prompt_data.get("langchain_type")
+
+        if not langchain_type:
+            raise ValueError("Invalid prompt_template: 'langchain_type' key is missing.")
+
+        if langchain_type == "PromptTemplate":
+            template = prompt_data.get("template")
+            input_variables = prompt_data.get("input_variables", [])
+            if not isinstance(input_variables, list):
+                raise ValueError("input_variables for PromptTemplate must be a list.")
+
+            if template is None:
+                raise ValueError("PromptTemplate requires a 'template' key.")
+            return PromptTemplate(template=template, input_variables=input_variables)
+
+        elif langchain_type == "ChatPromptTemplate":
+            messages_data = prompt_data.get("messages")
+            global_input_variables = prompt_data.get("input_variables", [])
+            if not isinstance(global_input_variables, list):
+                raise ValueError("input_variables for ChatPromptTemplate must be a list.")
+
+            if not isinstance(messages_data, list):
+                raise ValueError(
+                    "ChatPromptTemplate requires a 'messages' key, which must be a list."
+                )
+
+            langchain_messages = []
+            for msg_data in messages_data:
+                message_type = msg_data.get("message_type")
+                template = msg_data.get("template")
+                msg_input_variables = msg_data.get(
+                    "input_variables", []
+                )  # Message-specific input_variables
+
+                if template is None:
+                    raise ValueError(
+                        f"Chat message of type '{message_type}' requires a 'template' key."
+                    )
+                if not isinstance(msg_input_variables, list):
+                    raise ValueError(
+                        f"input_variables for chat message of type '{message_type}' must be a list."
+                    )
+
+                if message_type == "system":
+                    langchain_messages.append(SystemMessagePromptTemplate.from_template(template))
+                elif message_type == "human":
+                    langchain_messages.append(HumanMessagePromptTemplate.from_template(template))
+                elif message_type == "ai":
+                    langchain_messages.append(AIMessagePromptTemplate.from_template(template))
+                else:
+                    raise ValueError(f"Unsupported chat message type: {message_type}")
+
+            return ChatPromptTemplate.from_messages(
+                langchain_messages, input_variables=global_input_variables
+            )
+
+        else:
+            raise ValueError(f"Unsupported LangChain prompt type: {langchain_type}")
 
 
 class Message(models.Model):
     id = models.UUIDField(default=uuid.uuid4, editable=False, unique=True, primary_key=True)
     guid = models.UUIDField(unique=True, null=True, blank=True)
-    type = models.CharField(max_length=20, choices=MessageTypes, null=False, blank=False)
+    type = models.CharField(max_length=20, choices=MessageTypes.choices, null=False, blank=False)
+    role = models.CharField(
+        max_length=20, choices=RoleTypes.choices, default=RoleTypes.BASE, null=False, blank=False
+    )
     content = models.CharField(max_length=255, null=False, blank=False)
     prompt = models.ForeignKey(
         Prompt, on_delete=models.CASCADE, related_name="messages", null=False, blank=False
     )
+    # TODO: Add functionality to validate the roles a type has.
 
     def __str__(self):
         return str(self.content)
@@ -122,7 +279,11 @@ class OutputParsers(models.Model):
         Prompt, on_delete=models.CASCADE, related_name="parsers", null=False, blank=False
     )
     type = models.CharField(
-        max_length=20, choices=ParserTypes, null=False, blank=False, default=ParserTypes.JSON
+        max_length=20,
+        choices=ParserTypes.choices,
+        null=False,
+        blank=False,
+        default=ParserTypes.JSON,
     )
 
     def __str__(self):
@@ -141,106 +302,21 @@ class OutputParsers(models.Model):
             raise DjangoChainError(f"Unknown parser type {self.type}")
 
 
-class LLMChain(models.Model):
-    """
-    A model representing a LangChain chain configuration.
-    """
-
-    name = models.CharField(
-        max_length=255,
-        unique=True,
-        help_text=_("A unique name for this chain"),
-    )
-    prompt_template = models.TextField(
-        help_text=_("The template for the prompt, using {variable} syntax"),
-    )
-    model_name = models.CharField(
-        max_length=255,
-        help_text=_("The name of the LLM model to use"),
-    )
-    provider = models.CharField(
-        max_length=50,
-        default="openai",
-        help_text=_("The LLM provider to use (e.g., 'openai', 'google')"),
-    )
-    temperature = models.FloatField(
-        default=0.7,
-        help_text=_("The temperature parameter for the model"),
-    )
-    max_tokens = models.IntegerField(
-        null=True,
-        blank=True,
-        help_text=_("Maximum number of tokens to generate"),
-    )
-    input_variables = models.JSONField(
-        default=list,
-        help_text=_("List of expected input variable names"),
-    )
-    output_parser = models.CharField(
-        max_length=100,
-        blank=True,
-        null=True,
-        help_text=_("Name of LangChain output parser (e.g., 'JSONOutputParser')"),
+class Workflow(models.Model):
+    id = models.UUIDField(default=uuid.uuid4, editable=False, unique=True, primary_key=True)
+    guid = models.UUIDField(unique=True, null=True, blank=True)
+    name = models.CharField(max_length=255, unique=True, blank=False, null=False)
+    prompt = models.OneToOneField(Prompt, on_delete=models.PROTECT, blank=False, null=True)
+    chain_type = models.CharField(
+        max_length=20, choices=ChainTypes.choices, null=False, blank=False
     )
 
-    class Meta:
-        verbose_name = _("LLM Chain")
-        verbose_name_plural = _("LLM Chains")
-        ordering = ["-created_at"]
+    def __str__(self):
+        return str(self.name)
 
-    def __str__(self) -> str:
-        return self.name
-
-    def get_chain(self, llm_client: Optional[Any] = None) -> Any:
-        """
-        Get the LangChain chain instance.
-
-        Args:
-            llm_client: Optional LLM client instance to use
-
-        Returns:
-            A configured LangChain chain
-        """
-        # try:
-        #     if llm_client is None:
-        #         llm = LLMClient.get_chat_model(
-        #             provider=self.provider,
-        #             model_name=self.model_name,
-        #             temperature=self.temperature,
-        #             max_tokens=self.max_tokens,
-        #         )
-        #     else:
-        #         llm = llm_client
-        #
-        #     prompt = PromptManager.get_langchain_prompt(
-        #         self.prompt_template,
-        #         input_variables=self.input_variables,
-        #     )
-        #     return prompt | llm
-        # except Exception as e:
-        #     raise PromptValidationError(f"Failed to create chain: {e!s}") from e
-
-    def format_prompt(self, context: dict[str, Any]) -> str:
-        """
-        Format the prompt template with the given context.
-        """
-        try:
-            return self.prompt_template.format(**context)
-        except KeyError as e:
-            raise PromptValidationError(f"Missing required input variable: {e!s}") from e
-
-    def get_chain_config(self) -> dict[str, Any]:
-        """Returns the chain configuration as a dictionary."""
-        return {
-            "name": self.name,
-            "prompt_template": self.prompt_template,
-            "model_name": self.model_name,
-            "provider": self.provider,
-            "temperature": self.temperature,
-            "max_tokens": self.max_tokens,
-            "input_variables": self.input_variables,
-            "output_parser": self.output_parser,
-        }
+    def get_chain(self):
+        chain_mapping = {"CHAT": chat_workflow}
+        return chain_mapping.get(self.chain_type)
 
 
 class ChatSession(models.Model):
@@ -289,16 +365,16 @@ class ChatSession(models.Model):
         return self.title or f"Chat Session {self.session_id}"
 
 
+class RoleChoices(models.TextChoices):
+    USER = "USER", _("User template")
+    ASSISTANT = "ASSISTANT", _("Assistant Template")
+    SYSTEM = "SYSTEM", _("System Template")
+
+
 class ChatMessage(models.Model):
     """
     A model for storing chat messages.
     """
-
-    ROLE_CHOICES = [
-        ("user", "User"),
-        ("assistant", "Assistant"),
-        ("system", "System"),
-    ]
 
     session = models.ForeignKey(
         ChatSession,
@@ -307,9 +383,9 @@ class ChatMessage(models.Model):
     )
     content = models.TextField(_("content"))
     role = models.CharField(
-        _("role"),
+        choices=RoleChoices.choices,
+        default=RoleChoices.USER,
         max_length=10,
-        choices=ROLE_CHOICES,
     )
     timestamp = models.DateTimeField(_("timestamp"), auto_now_add=True)
     token_count = models.IntegerField(
