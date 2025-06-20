@@ -130,7 +130,7 @@ class LLMClient:
         """
         llm_settings = settings.DJANGO_LLM_SETTINGS
         embed_config = llm_settings.get("DEFAULT_EMBEDDING_MODEL", {})
-        provider = provider or embed_config.get("provider", "openai")
+        provider = provider or embed_config.get("provider", "fake")
 
         # Get API key for the provider
         api_key = llm_settings.get(f"{provider.upper()}_API_KEY")
