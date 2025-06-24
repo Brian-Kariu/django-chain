@@ -1,0 +1,89 @@
+site_name: Django Chain
+site_description: Documentation for the Django Chain project.
+site_author: Brian Kariu
+repo_url: https://github.com/Brian-Kariu/django-chain
+repo_name: django-chain
+
+theme:
+  name: material
+  features:
+    - content.tabs.link
+    - content.code.copy
+    - content.code.annotate
+    - navigation.expand
+    - navigation.sections
+    - navigation.indexes
+    - navigation.top
+    - navigation.footer
+    - search.highlight
+    - search.share
+    - search.suggest
+  palette:
+    - media: "(prefers-color-scheme)"
+      toggle:
+        icon: material/brightness-auto
+        name: Switch to light mode
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: blue
+      accent: indigo
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: blue
+      accent: indigo
+      toggle:
+        icon: material/weather-night
+        name: Switch to system preference
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [django_chain]
+          options:
+            docstring_style: google
+            docstring_section_style: list
+            show_root_heading: true
+            show_object_full_path: false
+            show_source: false # Hide source by default for cleaner docs
+            members_order: source # Order members as they appear in the source code
+  - gen-files:
+      scripts:
+        - docs/gen_api_docs.py
+  - literate-nav:
+      nav_file: summary.md
+  - section-index
+
+markdown_extensions:
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences
+  - pymdownx.details
+  - pymdownx.tabbed:
+      alternate_style: true
+  - admonition
+  - attr_list
+  - md_in_html
+  - toc:
+      permalink: true
+
+nav:
+  - Home: index.md
+  - Introduction:
+    - Design & Architecture: introduction/design.md
+    - Installation Guide: introduction/installation.md
+  - Usage:
+    - Tutorials: usage/tutorials.md
+    - How-to Guides: usage/how-to-guides.md
+  - API Reference:
+    - Overview: api/intro.md
+    - Models: api/models.md
+    - Views: api/views.md
+    - Mixins: api/mixins.md
+    - Providers: api/providers.md
+    - Utilities: api/utilities.md
+  - Contributing: contributing/README.md

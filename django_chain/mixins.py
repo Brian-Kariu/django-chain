@@ -1,4 +1,16 @@
+"""
+Mixins for reusable view logic in django-chain.
+
+This module provides mixins for JSON response handling, model CRUD operations, and activation/deactivation
+patterns to be used in Django class-based views throughout django-chain.
+
+Typical usage example:
+    class MyView(JSONResponseMixin, ModelListMixin, View):
+        ...
+"""
+
 import json
+from typing import Any
 
 from django.core.exceptions import ObjectDoesNotExist
 from django.core.exceptions import ValidationError
@@ -13,7 +25,22 @@ from django_chain.utils.llm_client import create_llm_chat_client
 
 
 class LLMGenerationMixin:
-    def get_model(self, **kwargs):
+    """
+    Mixin for LLM model and workflow instantiation in views.
+
+    Provides methods to get a model, invoke a runnable, and dispatch requests for LLM generation.
+    """
+
+    def get_model(self, **kwargs) -> Any:
+        """
+        Get a workflow chain for LLM generation.
+
+        Args:
+            **kwargs: Arguments for prompt, model, and workflow selection.
+
+        Returns:
+            Any: The workflow chain instance.
+        """
         prompt_info = kwargs.pop("prompt")
         self.prompt = Prompt.objects.filter(id=prompt_info).first()
 
@@ -29,13 +56,35 @@ class LLMGenerationMixin:
         self.workflow_chain(self.prompt, self.provider, self.model_args)
         return self.workflow_chain
 
-    def invoke_runnable(self, request, *args, **kwargs):
+    def invoke_runnable(self, request, *args, **kwargs) -> Any:
+        """
+        Invoke a runnable with user input.
+
+        Args:
+            request (HttpRequest): The HTTP request object.
+            *args: Additional arguments.
+            **kwargs: Must include 'runnable' and 'input'.
+
+        Returns:
+            Any: The output from the runnable.
+        """
         runnable = kwargs["runnable"]
         user_input = kwargs["input"]
         output = runnable.invoke(user_input)
         return output
 
     def dispatch(self, request, *args, **kwargs):
+        """
+        Custom dispatch to handle LLM invocation for POST requests.
+
+        Args:
+            request (HttpRequest): The HTTP request object.
+            *args: Additional arguments.
+            **kwargs: Additional keyword arguments.
+
+        Returns:
+            HttpResponse: The response from the view.
+        """
         if request.method == "post" and "invoke" in request.PATH:
             kwargs["runnable"] = self.get_model(**kwargs)
             return super().dispatch(request, *args, **kwargs)
@@ -53,12 +102,27 @@ class JSONResponseMixin:
         """
         Renders data as a JSON response.
         `safe=False` is needed if the top-level object is a list.
+
+        Args:
+            data (dict, optional): Data to serialize. Defaults to None.
+            status (int, optional): HTTP status code. Defaults to 200.
+            safe (bool, optional): Whether to allow non-dict top-level objects. Defaults to True.
+
+        Returns:
+            JsonResponse: The JSON response.
         """
         return JsonResponse(data or {}, status=status, safe=safe)
 
     def json_error_response(self, error_message: str | dict, status: int = 400) -> JsonResponse:
         """
         Returns a consistent JSON error response.
+
+        Args:
+            error_message (str | dict): The error message or dict of errors.
+            status (int, optional): HTTP status code. Defaults to 400.
+
+        Returns:
+            JsonResponse: The JSON error response.
         """
         if isinstance(error_message, dict):
             return JsonResponse({"errors": error_message}, status=status)
@@ -69,6 +133,14 @@ class JSONResponseMixin:
         """
         Apply csrf_exempt to all methods in views inheriting this mixin.
         Also attempts to load JSON body for POST/PUT methods.
+
+        Args:
+            request (HttpRequest): The HTTP request object.
+            *args: Additional arguments.
+            **kwargs: Additional keyword arguments.
+
+        Returns:
+            HttpResponse: The response from the view.
         """
         if request.method in ["POST", "PUT"]:
             try:
@@ -87,7 +159,16 @@ class ModelRetrieveMixin:
     model_class = None
     serializer_method = None
 
-    def get_object(self, pk):
+    def get_object(self, pk: Any) -> Any:
+        """
+        Retrieve a model instance by primary key.
+
+        Args:
+            pk (Any): The primary key value.
+
+        Returns:
+            Any: The model instance or None if not found.
+        """
         if self.model_class is None or self.serializer_method is None:
             raise NotImplementedError(
                 "ModelRetrieveMixin requires 'model_class' and 'serializer_method' to be set."
@@ -111,7 +192,16 @@ class ModelListMixin:
     model_class = None
     serializer_method = None
 
-    def get_queryset(self, request):
+    def get_queryset(self, request: Any) -> Any:
+        """
+        Get a queryset of all model instances.
+
+        Args:
+            request (HttpRequest): The HTTP request object.
+
+        Returns:
+            QuerySet: The queryset of model instances.
+        """
         if self.model_class is None or self.serializer_method is None:
             raise NotImplementedError(
                 "ModelListMixin requires 'model_class' and 'serializer_method' to be set."
@@ -119,7 +209,17 @@ class ModelListMixin:
 
         return self.model_class.objects.all()
 
-    def apply_list_filters(self, queryset, request):
+    def apply_list_filters(self, queryset: Any, request: Any) -> Any:
+        """
+        Apply filters to the queryset. Override in subclasses.
+
+        Args:
+            queryset (QuerySet): The queryset to filter.
+            request (HttpRequest): The HTTP request object.
+
+        Returns:
+            QuerySet: The filtered queryset.
+        """
         return queryset
 
 
@@ -133,7 +233,16 @@ class ModelCreateMixin:
     serializer_method = None
     required_fields = []
 
-    def create_object(self, request_data):
+    def create_object(self, request_data: dict) -> Any:
+        """
+        Create a new model instance from request data.
+
+        Args:
+            request_data (dict): Data for the new instance.
+
+        Returns:
+            Any: The created model instance.
+        """
         if self.model_class is None or self.serializer_method is None:
             raise NotImplementedError(
                 "ModelCreateMixin requires 'model_class' and 'serializer_method' to be set."
@@ -155,7 +264,17 @@ class ModelUpdateMixin:
     Requires: `model_class`, `serializer_method`.
     """
 
-    def update_object(self, obj, request_data):
+    def update_object(self, obj: Any, request_data: dict) -> Any:
+        """
+        Update an existing model instance with request data.
+
+        Args:
+            obj (Any): The model instance to update.
+            request_data (dict): Data to update the instance with.
+
+        Returns:
+            Any: The updated model instance.
+        """
         for field, value in request_data.items():
             if hasattr(obj, field):
                 setattr(obj, field, value)
@@ -169,7 +288,13 @@ class ModelDeleteMixin:
     Mixin for handling DELETE requests to delete model instances.
     """
 
-    def delete_object(self, obj):
+    def delete_object(self, obj: Any) -> None:
+        """
+        Delete a model instance.
+
+        Args:
+            obj (Any): The model instance to delete.
+        """
         obj.delete()
 
 
@@ -182,7 +307,18 @@ class ModelActivateDeactivateMixin:
     model_class = None
     serializer_method = None
 
-    def post(self, request, pk, action):
+    def post(self, request: Any, pk: Any, action: str) -> Any:
+        """
+        Activate or deactivate a model instance.
+
+        Args:
+            request (HttpRequest): The HTTP request object.
+            pk (Any): The primary key of the instance.
+            action (str): 'activate' or 'deactivate'.
+
+        Returns:
+            JsonResponse: The response with the updated instance or error.
+        """
         obj = self.get_object(pk)
         if obj is None:
             return self.json_error_response(f"{self.model_class.__name__} not found.", status=404)
@@ -198,7 +334,5 @@ class ModelActivateDeactivateMixin:
                         "Invalid action. Must be 'activate' or 'deactivate'.", status=400
                     )
             return self.render_json_response(self.serializer_method(obj))
-        except ValidationError as e:
-            return self.json_error_response(e.message_dict, status=400)
         except Exception as e:
             return self.json_error_response(str(e), status=500)

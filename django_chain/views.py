@@ -1,3 +1,15 @@
+"""
+Views for django-chain: API endpoints for prompt, workflow, user interaction, and LLM execution.
+
+This module provides Django class-based and function-based views for managing prompts, workflows,
+user interactions, and LLM-powered chat or vector search endpoints.
+
+Typical usage example:
+    urlpatterns = [
+        path('api/', include('django_chain.urls')),
+    ]
+"""
+
 import json
 import uuid
 from typing import Any
@@ -13,7 +25,7 @@ from .services.llm_client import LLMClient
 from .services.vector_store_manager import VectorStoreManager
 
 from django.core.exceptions import ValidationError, ObjectDoesNotExist
-from django.db import transaction
+from django.db import transaction, models
 
 from django_chain.models import Prompt, Workflow, UserInteraction
 from django_chain.utils.llm_client import (
@@ -69,17 +81,42 @@ def serialize_user_interaction(user_interaction, include_logs=False):
 
 
 class PromptListCreateView(JSONResponseMixin, ModelListMixin, ModelCreateMixin, View):
+    """
+    View for listing and creating Prompt objects.
+
+    GET: List all prompts (optionally filter by name or active status).
+    POST: Create a new prompt version.
+    """
+
     model_class = Prompt
     serializer_method = lambda view, p: p.to_dict()
     required_fields = ["name", "prompt_template"]
 
-    def get(self, request, *args, **kwargs):
+    def get(self, request, *args, **kwargs) -> JsonResponse:
+        """
+        List all prompts, optionally filtered by name or active status.
+
+        Args:
+            request (HttpRequest): The HTTP request object.
+
+        Returns:
+            JsonResponse: List of serialized prompts.
+        """
         prompts = self.get_queryset(request)
         prompts = self.apply_list_filters(prompts, request)
         data = [self.serializer_method(p) for p in prompts]
         return self.render_json_response(data, safe=False)
 
-    def post(self, request, *args, **kwargs):
+    def post(self, request, *args, **kwargs) -> JsonResponse:
+        """
+        Create a new prompt version.
+
+        Args:
+            request (HttpRequest): The HTTP request object.
+
+        Returns:
+            JsonResponse: The created prompt or error message.
+        """
         request_data = request.json_body
         try:
             name = request_data.get("name")
@@ -100,7 +137,17 @@ class PromptListCreateView(JSONResponseMixin, ModelListMixin, ModelCreateMixin, 
         except Exception as e:
             return self.json_error_response(str(e), status=500)
 
-    def apply_list_filters(self, queryset, request):
+    def apply_list_filters(self, queryset, request) -> models.QuerySet:
+        """
+        Apply filters to the queryset based on request parameters.
+
+        Args:
+            queryset (QuerySet): The queryset to filter.
+            request (HttpRequest): The HTTP request object.
+
+        Returns:
+            QuerySet: The filtered queryset.
+        """
         include_inactive = request.GET.get("include_inactive", "false").lower() == "true"
         name_filter = request.GET.get("name")
 
@@ -114,16 +161,44 @@ class PromptListCreateView(JSONResponseMixin, ModelListMixin, ModelCreateMixin, 
 class PromptDetailView(
     JSONResponseMixin, ModelRetrieveMixin, ModelUpdateMixin, ModelDeleteMixin, View
 ):
+    """
+    View for retrieving, updating, or deleting a single Prompt object.
+
+    GET: Retrieve a prompt by primary key.
+    PUT: Update a prompt's input variables or template.
+    DELETE: Delete a prompt.
+    """
+
     model_class = Prompt
     serializer_method = lambda view, p: p.to_dict()
 
-    def get(self, request, pk, *args, **kwargs):
+    def get(self, request, pk: str, *args, **kwargs) -> JsonResponse:
+        """
+        Retrieve a prompt by primary key.
+
+        Args:
+            request (HttpRequest): The HTTP request object.
+            pk (str): The primary key of the prompt.
+
+        Returns:
+            JsonResponse: The serialized prompt or error message.
+        """
         prompt = self.get_object(pk)
         if prompt is None:
             return self.json_error_response("Prompt not found.", status=404)
         return self.render_json_response(self.serializer_method(prompt))
 
-    def put(self, request, pk, *args, **kwargs):
+    def put(self, request, pk: str, *args, **kwargs) -> JsonResponse:
+        """
+        Update a prompt's input variables or template.
+
+        Args:
+            request (HttpRequest): The HTTP request object.
+            pk (str): The primary key of the prompt.
+
+        Returns:
+            JsonResponse: The updated prompt or error message.
+        """
         prompt = self.get_object(pk)
         if prompt is None:
             return self.json_error_response("Prompt not found.", status=404)
@@ -143,7 +218,17 @@ class PromptDetailView(
         except Exception as e:
             return self.json_error_response(str(e), status=500)
 
-    def delete(self, request, pk, *args, **kwargs):
+    def delete(self, request, pk: str, *args, **kwargs) -> JsonResponse:
+        """
+        Delete a prompt by primary key.
+
+        Args:
+            request (HttpRequest): The HTTP request object.
+            pk (str): The primary key of the prompt.
+
+        Returns:
+            JsonResponse: Success message or error message.
+        """
         prompt = self.get_object(pk)
         if prompt is None:
             return self.json_error_response("Prompt not found.", status=404)
