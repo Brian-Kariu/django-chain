@@ -334,7 +334,5 @@ class ModelActivateDeactivateMixin:
                         "Invalid action. Must be 'activate' or 'deactivate'.", status=400
                     )
             return self.render_json_response(self.serializer_method(obj))
-        except ValidationError as e:
-            return self.json_error_response(e.message_dict, status=400)
         except Exception as e:
             return self.json_error_response(str(e), status=500)
