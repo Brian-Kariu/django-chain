@@ -1,5 +1,16 @@
 """
-Chain models for django-chain.
+Models for django-chain: LLM prompts, workflows, chat sessions, messages, logs, and user interactions.
+
+This module defines the core database models for prompt management, workflow orchestration, chat memory,
+LLM interaction logging, and user interaction tracking in Django Chain.
+
+Typical usage example:
+    prompt = Prompt.objects.create(...)
+    session = ChatSession.objects.create(...)
+    message = ChatMessage.objects.create(session=session, ...)
+
+Raises:
+    ValidationError: If model constraints are violated.
 """
 
 import logging
@@ -211,6 +222,13 @@ class Prompt(models.Model):
 class Workflow(models.Model):
     """
     Represents an AI workflow, defined as a sequence of LangChain components.
+
+    Attributes:
+        id (UUID): Unique identifier for the workflow.
+        name (str): Name of the workflow (unique).
+        description (str): Description of the workflow.
+        workflow_definition (list): List of steps (dicts) defining the workflow.
+        is_active (bool): Whether this workflow is active.
     """
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -243,20 +261,29 @@ class Workflow(models.Model):
         unique_together = (("name", "is_active"),)
         ordering = ["name"]
 
-    def to_dict(self):
+    def to_dict(self) -> dict:
         """
         Returns a dictionary representation of the Workflow instance for API responses.
+
+        Returns:
+            dict: Dictionary with workflow fields.
         """
         data = model_to_dict(self, exclude=["id"])
         data["id"] = str(self.id)
         return data
 
-    def __str__(self):
+    def __str__(self) -> str:
+        """
+        Return a string representation of the workflow.
+        """
         return f"{self.name} ({'Active' if self.is_active else 'Inactive'})"
 
-    def clean(self):
+    def clean(self) -> None:
         """
         Custom validation for workflow definition and active status.
+
+        Raises:
+            ValidationError: If constraints are violated.
         """
         super().clean()
 
@@ -289,26 +316,40 @@ class Workflow(models.Model):
                     code=f"missing_step_type_{i}",
                 )
 
-    def save(self, *args, **kwargs):
+    def save(self, *args, **kwargs) -> None:
+        """
+        Save the workflow instance after full validation.
+        """
         self.full_clean()
         super().save(*args, **kwargs)
 
-    def activate(self):
-        """Activates this workflow, deactivating any other active workflow with the same name."""
+    def activate(self) -> None:
+        """
+        Activates this workflow, deactivating any other active workflow with the same name.
+        """
         Workflow.objects.filter(name=self.name, is_active=True).exclude(pk=self.pk).update(
             is_active=False
         )
         self.is_active = True
         self.save()
 
-    def deactivate(self):
-        """Deactivates this workflow."""
+    def deactivate(self) -> None:
+        """
+        Deactivates this workflow.
+        """
         self.is_active = False
         self.save()
 
-    def to_langchain_chain(self):  # noqa: C901
+    def to_langchain_chain(self) -> Any:  # noqa C901
         """
         Constructs and returns a LangChain RunnableSequence from the workflow definition.
+
+        Returns:
+            Any: LangChain RunnableSequence instance.
+
+        Raises:
+            ImportError: If LangChain is not installed.
+            ValueError: If the workflow definition is invalid.
         """
         if not LANGCHAIN_AVAILABLE:
             raise ImportError("LangChain library is not installed. Cannot construct chain.")
@@ -393,7 +434,15 @@ class Workflow(models.Model):
 
 class ChatSession(models.Model):
     """
-    A model for storing chat session information.
+    Stores chat session information, including user, session ID, and LLM config.
+
+    Attributes:
+        user (User): Associated user (nullable).
+        session_id (str): Unique session identifier.
+        title (str): Optional title for the chat session.
+        llm_config (dict): LLM configuration for this session.
+        created_at (datetime): Creation timestamp.
+        updated_at (datetime): Last update timestamp.
     """
 
     user = models.ForeignKey(
@@ -434,10 +483,17 @@ class ChatSession(models.Model):
         ]
 
     def __str__(self) -> str:
+        """
+        Return a string representation of the chat session.
+        """
         return self.title or f"Chat Session {self.session_id}"
 
 
 class RoleChoices(models.TextChoices):
+    """
+    Enum for chat message roles.
+    """
+
     USER = "USER", _("User template")
     ASSISTANT = "ASSISTANT", _("Assistant Template")
     SYSTEM = "SYSTEM", _("System Template")
@@ -445,7 +501,15 @@ class RoleChoices(models.TextChoices):
 
 class ChatMessage(models.Model):
     """
-    A model for storing chat messages.
+    Stores individual chat messages within a session.
+
+    Attributes:
+        session (ChatSession): Related chat session.
+        content (str): Message content.
+        role (str): Message role (user, assistant, system).
+        timestamp (datetime): Message creation time.
+        token_count (int): Optional token count.
+        order (int): Order for sorting messages.
     """
 
     session = models.ForeignKey(
@@ -480,12 +544,30 @@ class ChatMessage(models.Model):
         ]
 
     def __str__(self) -> str:
+        """
+        Return a string representation of the chat message.
+        """
         return f"{self.role}: {self.content[:50]}..."
 
 
 class LLMInteractionLog(models.Model):
     """
-    A model for logging LLM interactions.
+    Logs LLM interactions for auditing, cost analysis, and debugging.
+
+    Attributes:
+        user (User): User who initiated the interaction.
+        prompt_text (str): Prompt sent to the LLM.
+        response_text (str): LLM response.
+        model_name (str): Name of the LLM model used.
+        provider (str): LLM provider.
+        input_tokens (int): Number of input tokens.
+        output_tokens (int): Number of output tokens.
+        total_cost (Decimal): Estimated cost in USD.
+        latency_ms (int): Latency in milliseconds.
+        status (str): Success or error.
+        error_message (str): Error message if failed.
+        created_at (datetime): Creation timestamp.
+        metadata (dict): Additional metadata.
     """
 
     user = models.ForeignKey(
@@ -553,11 +635,30 @@ class LLMInteractionLog(models.Model):
         ]
 
     def __str__(self) -> str:
+        """
+        Return a string representation of the LLM interaction log.
+        """
         return f"Log {self.pk} - {self.model_name} ({self.status})"
 
 
 class UserInteractionManager(models.Manager):
+    """
+    Manager for UserInteraction model, providing helper methods for creation and filtering.
+    """
+
     def create_for_workflow(self, workflow, input_data, user_identifier, session_id):
+        """
+        Create a new UserInteraction for a workflow.
+
+        Args:
+            workflow (Workflow): The workflow instance.
+            input_data (dict): Input data for the interaction.
+            user_identifier (str): User/session identifier.
+            session_id (UUID): Session ID.
+
+        Returns:
+            UserInteraction: The created interaction.
+        """
         return self.create(
             workflow=workflow,
             input_data=input_data,
@@ -567,15 +668,33 @@ class UserInteractionManager(models.Manager):
         )
 
     def completed_interactions(self):
+        """
+        Return queryset of completed (successful) interactions.
+        """
         return self.filter(status="success")
 
     def for_session(self, session_id):
+        """
+        Return queryset of interactions for a given session ID.
+        """
         return self.filter(session_id=session_id)
 
 
 class UserInteraction(models.Model):
     """
     Records a single overall user query and the final LLM response.
+
+    Attributes:
+        id (UUID): Unique identifier.
+        workflow (Workflow): Related workflow.
+        user_identifier (str): User/session identifier.
+        session_id (UUID): Session grouping ID.
+        input_data (dict): Input JSON from the user.
+        llm_output (dict): Output from the LLM workflow.
+        total_cost_estimate (Decimal): Estimated cost.
+        total_duration_ms (int): Execution time in ms.
+        status (str): Status of the interaction.
+        error_message (str): Error message if failed.
     """
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -629,17 +748,30 @@ class UserInteraction(models.Model):
         verbose_name_plural = _("User Interactions")
         ordering = ["-id"]
 
-    def __str__(self):
+    def __str__(self) -> str:
+        """
+        Return a string representation of the user interaction.
+        """
         return f"Interaction {self.id} for {self.workflow.name if self.workflow else 'N/A'}"
 
     def update_status_and_metrics(
         self,
-        status,
-        llm_output=None,
-        total_cost_estimate=None,
-        total_duration_ms=None,
-        error_message=None,
-    ):
+        status: str,
+        llm_output: Optional[dict] = None,
+        total_cost_estimate: Optional[float] = None,
+        total_duration_ms: Optional[int] = None,
+        error_message: Optional[str] = None,
+    ) -> None:
+        """
+        Update the status and metrics for this interaction.
+
+        Args:
+            status (str): New status.
+            llm_output (dict, optional): LLM output.
+            total_cost_estimate (float, optional): Cost estimate.
+            total_duration_ms (int, optional): Duration in ms.
+            error_message (str, optional): Error message.
+        """
         self.status = status
         if llm_output is not None:
             self.llm_output = llm_output
@@ -653,19 +785,41 @@ class UserInteraction(models.Model):
 
 
 class InteractionLogManager(models.Manager):
+    """
+    Manager for InteractionLog, providing helper for step log creation.
+    """
+
     def create_step_log(
         self,
         user_interaction,
-        step_order,
-        step_type,
-        component_name,
-        input_to_step,
-        output_from_step,
-        metadata,
-        duration_ms,
-        status="success",
-        error_message=None,
-    ):
+        step_order: int,
+        step_type: str,
+        component_name: str,
+        input_to_step: dict,
+        output_from_step: dict,
+        metadata: dict,
+        duration_ms: int,
+        status: str = "success",
+        error_message: Optional[str] = None,
+    ) -> "InteractionLog":
+        """
+        Create a step log for a workflow execution step.
+
+        Args:
+            user_interaction (UserInteraction): Parent interaction.
+            step_order (int): Step order.
+            step_type (str): Type of step.
+            component_name (str): Name of component.
+            input_to_step (dict): Input payload.
+            output_from_step (dict): Output payload.
+            metadata (dict): Step metadata.
+            duration_ms (int): Step duration in ms.
+            status (str): Step status.
+            error_message (str, optional): Error message.
+
+        Returns:
+            InteractionLog: The created log entry.
+        """
         return self.create(
             user_interaction=user_interaction,
             step_order=step_order,
@@ -683,6 +837,19 @@ class InteractionLogManager(models.Manager):
 class InteractionLog(models.Model):
     """
     Records detailed step-by-step information for each component within a workflow execution.
+
+    Attributes:
+        id (UUID): Unique identifier.
+        user_interaction (UserInteraction): Parent interaction.
+        step_order (int): Step order in workflow.
+        step_type (str): Type of component (prompt, llm, parser).
+        component_name (str): Name of the component.
+        input_to_step (dict): Input payload.
+        output_from_step (dict): Output payload.
+        metadata (dict): Step metadata.
+        duration_ms (int): Step duration in ms.
+        status (str): Step status.
+        error_message (str): Error message if failed.
     """
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -743,4 +910,7 @@ class InteractionLog(models.Model):
         unique_together = (("user_interaction", "step_order"),)
 
     def __str__(self):
+        """
+        Return a string representation of the interaction log.
+        """
         return f"Log for {self.user_interaction} - Step {self.step_order} ({self.step_type})"

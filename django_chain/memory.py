@@ -1,5 +1,12 @@
 """
-Memory management for django-chain.
+Memory management utilities for django-chain.
+
+This module provides functions to hydrate LangChain memory objects from chat sessions and
+persist conversation history back to the database.
+
+Typical usage example:
+    memory = get_langchain_memory(session, memory_type="buffer")
+    save_messages_to_session(session, messages)
 """
 
 import logging

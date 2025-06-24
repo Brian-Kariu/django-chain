@@ -1,5 +1,8 @@
 """
 LLM provider integrations for django-chain.
+
+This package provides functions to instantiate chat and embedding models for supported LLM providers
+(OpenAI, Google, HuggingFace, Fake) and acts as a central registry for provider selection.
 """
 
 from typing import Any
