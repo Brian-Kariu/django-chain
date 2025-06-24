@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.9"
 license = "MIT"
 authors = [
-    { name = "Brian Kariu", email = "waiganjo.brian@gmail.com" }
+    { name = "Brian Kariu"}
 ]
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -25,6 +25,7 @@ classifiers = [
     "Framework :: Django :: 4.2",
     "Framework :: Django :: 5.0",
 ]
+keywords = ["django", "langchain"]
 dependencies = [
     "Django>=4.0",
     "langchain>=0.1.0",
@@ -71,6 +72,14 @@ dev = [
     "ruff>=0.1.0",
     "mypy>=1.5.1",
     "model_bakery>=1.20.5",
+]
+docs = [
+    "mkdocs==1.6.1",
+    "mkdocstrings[python]",
+    "mkdocs-gen-files",
+    "mkdocs-literate-nav",
+    "mkdocs-section-index",
+    "mkdocs-material"
 ]
 
 [tool.hatch.build.targets.wheel]

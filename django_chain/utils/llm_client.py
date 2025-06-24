@@ -1,3 +1,15 @@
+"""
+LLM client utilities for django-chain.
+
+This module provides functions to instantiate chat and embedding models, serialize LangChain objects,
+and build workflow chains for LLM-powered Django applications.
+
+Typical usage example:
+    chat_model = create_llm_chat_client("openai", ...)
+    embedding_model = create_llm_embedding_client("openai", ...)
+    chain = create_langchain_workflow_chain([...], {...})
+"""
+
 import importlib
 import logging
 import os

@@ -107,3 +107,26 @@ jobs:
           labels: |
             automated pr
             formatting
+
+  test-docs:
+    name: Test documentation links
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.9'
+
+      - name: Install dependencies
+        run: pip install -e ".[dev,docs]"
+
+      - run: mkdocs serve &
+      - run: WAIT_TIME=0 && until nc -vzw 2 localhost 8000 || [ $WAIT_TIME -eq 5 ]; do sleep $(( WAIT_TIME++ )); done
+      - run: if [ $WAIT_TIME == 5 ]; then echo cannot start mkdocs server on http://localhost:8000; exit 1; fi
+
+      - name: Check links
+        continue-on-error: true
+        run: pylinkvalidate.py -P http://localhost:8000/
+
+      - run: echo "Done"

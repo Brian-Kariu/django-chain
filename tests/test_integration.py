@@ -111,8 +111,6 @@ class TestProjectIntegration(TestCase):
             title="Test Chat", llm_config={"model_name": "fake-model"}
         )
 
-        test_chat = TestChat.objects.create(name="test_chat_wrapper", session=session)
-
         self.assertEqual(test_chain.chain, chain)
 
 
