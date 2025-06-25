@@ -4,11 +4,11 @@ build-backend = "hatchling.build"
 
 [project]
 name = "django-chain"
-version = "0.0.1"
 description = "A Django-based library for seamless LLM integration"
 readme = "README.md"
 requires-python = ">=3.9"
 license = "MIT"
+version = "0.1.0"
 authors = [
     { name = "Brian Kariu"}
 ]
@@ -30,7 +30,7 @@ dependencies = [
     "Django>=4.0",
     "langchain>=0.1.0",
     "langchain-core>=0.1.0",
-    "langchain-community>=0.1.0",  # Required for fake embeddings and other integrations
+    "langchain-community>=0.1.0",
     "python-decouple>=3.8",
     "psycopg2-binary>=2.9.0",
 ]
@@ -72,6 +72,7 @@ dev = [
     "ruff>=0.1.0",
     "mypy>=1.5.1",
     "model_bakery>=1.20.5",
+    "commitizen",
 ]
 docs = [
     "mkdocs==1.6.1",
@@ -92,6 +93,9 @@ include = [
 
 [tool.hatch.metadata]
 allow-direct-references = true
+
+[tool.hatch.version]
+path = "django_chain/__init__.py"
 
 [tool.ruff]
 line-length = 100
@@ -260,3 +264,16 @@ exclude_lines = [
     "pass",
     "raise ImportError",
 ]
+
+[tool.commitizen]
+name = "cz_conventional_commits"
+version_files = [
+    "django_chain/__init__.py",
+    "pyproject.toml:version"
+]
+update_changelog_on_bump = true
+version_scheme = "pep440"
+version_provider = "pep621"
+major_version_zero = true
+changelog_file="CHANGELOG.md"
+changelog_incremental=true
