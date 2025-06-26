@@ -4,11 +4,15 @@ on:
   push:
     tags:
       - "*"
-  workflow_dispatch:
 
 jobs:
-  publish:
+  testpypi-publish:
     runs-on: ubuntu-latest
+    environment:
+      name: testpypi
+      url: ${{ env.TESTPYPI_URL }}
+    permissions:
+      id-token: write
     steps:
       - uses: actions/checkout@v4
 
@@ -24,13 +28,40 @@ jobs:
       - name: Install project and development dependencies
         run: pip install -e ".[dev,all]"
 
-      - name: Run tests
-        run: |
-          pytest
+      - name: Build package
+        run: python3 -m build
 
       - name: Publish package to TestPyPI
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
-          password: ${{ secrets.PYPI_PASSWORD }}
-          repository-url: https://test.pypi.org/p/django-chain/
+          verbose: true
+
+  pypi-publish:
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: ${{ env.PYPI_URL }}
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+          cache: pip
+
+      - name: Install build dependencies
+        run: pip install hatchling
+
+      - name: Install project and development dependencies
+        run: pip install -e ".[dev,all]"
+
+      - name: Build package
+        run: python3 -m build
+
+      - name: Publish package to TestPyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
           verbose: true

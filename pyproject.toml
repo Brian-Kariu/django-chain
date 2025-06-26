@@ -8,6 +8,7 @@ description = "A Django-based library for seamless LLM integration"
 readme = "README.md"
 requires-python = ">=3.9"
 license = "MIT"
+license_files = "LICENCE.txt"
 version = "0.2.0a0"
 authors = [
     { name = "Brian Kariu"}
@@ -82,6 +83,13 @@ docs = [
     "mkdocs-section-index",
     "mkdocs-material"
 ]
+
+[project.urls]
+homepage = "https://github.com/Brian-Kariu/django-chain/"
+repository = "https://github.com/Brian-Kariu/django-chain/"
+documentation = "https://github.com/Brian-Kariu/django-chain/blob/main/README.md"
+changelog = "https://github.com/Brian-Kariu/django-chain/blob/main/CHANGELOG.md"
+"Bug Tracker" = "https://github.com/Brian-Kariu/django-chain/issues"
 
 [tool.hatch.build.targets.wheel]
 packages = ["django_chain"]
