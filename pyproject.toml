@@ -277,3 +277,4 @@ version_provider = "pep621"
 major_version_zero = true
 changelog_file="CHANGELOG.md"
 changelog_incremental=true
+commit_args = "--no-verify"
