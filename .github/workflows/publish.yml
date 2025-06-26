@@ -1,0 +1,36 @@
+name: Upload Python Package
+
+on:
+  push:
+    tags:
+      - "*"
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+          cache: pip
+
+      - name: Install build dependencies
+        run: pip install hatchling
+
+      - name: Install project and development dependencies
+        run: pip install -e ".[dev,all]"
+
+      - name: Run tests
+        run: |
+          pytest
+
+      - name: Publish package to TestPyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          password: ${{ secrets.PYPI_PASSWORD }}
+          repository-url: https://test.pypi.org/p/django-chain/
+          verbose: true

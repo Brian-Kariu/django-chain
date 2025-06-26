@@ -3,7 +3,7 @@ name: Bump version
 on:
   push:
     branches:
-      - build/add-release-pipeline
+      - master
 
 jobs:
   bump-version:
@@ -23,9 +23,12 @@ jobs:
           changelog_increment_filename: RELEASE_NOTES.md
           prerelease: "alpha"
       - name: Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           body_path: "RELEASE_NOTES.md"
           tag_name: ${{ env.REVISION }}
+          prerelease: true
+          generate_release_notes: true
+          files: RELEASE_NOTES.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
