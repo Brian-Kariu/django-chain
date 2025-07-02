@@ -12,18 +12,19 @@ Typical usage example:
 
 import importlib
 import logging
-import os
+import time
 from typing import Any
+from typing import Dict
+from typing import List
+from typing import Optional
+from typing import Union
+from uuid import UUID
 
 from django.conf import settings
+from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.embeddings import Embeddings
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import BaseMessage
-from langchain_core.output_parsers import JsonOutputParser
-from langchain_core.output_parsers import StrOutputParser
-
-from django_chain.models import Prompt
-from django_chain.providers import get_chat_model
 
 # TODO: Add custom logging
 LOGGER = logging.getLogger(__name__)
@@ -63,11 +64,6 @@ def create_llm_chat_client(provider: str, **kwargs) -> BaseChatModel | None:
                 max_tokens=model_max_tokens,
                 **kwargs,
             )
-        else:
-            # TODO: Add specific test for this condition
-            LOGGER.error(
-                f"Chat function '{client_function_name}' not found in module '{module_name}'."
-            )
     except ImportError as e:
         LOGGER.error(f"Error importing LLM Provider {module_name}: {e}")
 
@@ -96,11 +92,6 @@ def create_llm_embedding_client(provider: str, **kwargs) -> Embeddings | None:
         if hasattr(llm_module, client_function_name):
             dynamic_function = getattr(llm_module, client_function_name)
             return dynamic_function(**kwargs)
-        else:
-            # TODO: Add specific test for this condition
-            LOGGER.error(
-                f"Embedding function '{client_function_name}' not found in module '{module_name}'."
-            )
     except ImportError as e:
         LOGGER.error(f"Error importing LLM Provider {module_name}: {e}")
 
@@ -120,108 +111,180 @@ def _to_serializable(obj: Any) -> Any:
 
 
 def _execute_and_log_workflow_step(
-    current_input: Any,
-    workflow_record: Any,
-    global_llm_config: dict,
+    workflow_chain, current_input: Any, execution_method: str, execution_config: dict = {}
 ) -> Any:
     """
     Executes a single step of the workflow, handles its logging, and returns its output.
     Uses _to_serializable for logging inputs/outputs.
     """
-    workflow_chain = create_langchain_workflow_chain(
-        workflow_record.workflow_definition, global_llm_config
-    )
-    output = workflow_chain.invoke(current_input)
+    EXECUTION_METHODS = {
+        "INVOKE": workflow_chain.invoke,
+        "BATCH": workflow_chain.batch,
+        "BATCH_AS_COMPLETED": workflow_chain.batch_as_completed,
+        "STREAM": workflow_chain.stream,
+        "AINVOKE": workflow_chain.ainvoke,
+        "ASTREAM": workflow_chain.astream,
+        "ABATCH_AS_COMPLETED": workflow_chain.abatch_as_completed,
+    }
+    output = EXECUTION_METHODS[execution_method](current_input, config=execution_config)
+
     return output
 
 
-def _get_langchain_prompt_object(prompt_name: dict):  # noqa: C901
-    """
-    Internal utility to convert a prompt_data dictionary into a LangChain prompt object.
-    This should be similar to Prompt.to_langchain_prompt() but independent of the DB model.
-    """
-    prompt = Prompt.objects.get(name=prompt_name)
-    return prompt.to_langchain_prompt()
+class LoggingHandler(BaseCallbackHandler):
+    def __init__(
+        self,
+        interaction_log,
+        **kwargs: Any,
+    ):
+        super().__init__(**kwargs)
+        self.interaction_log = interaction_log
+        self.start_times: Dict[UUID, float] = {}
 
+    def _get_llm_model_name_from_serialized(self, serialized: Dict[str, Any]) -> str:
+        """Helper to extract LLM model name from serialized data."""
+        if "name" in serialized:
+            return serialized["name"]
+        if "kwargs" in serialized and "model_name" in serialized["kwargs"]:
+            return serialized["kwargs"]["model_name"]
+        if "kwargs" in serialized and "model" in serialized["kwargs"]:
+            return serialized["kwargs"]["model"]
+        return "unknown_llm_model"
 
-def create_langchain_workflow_chain(workflow_definition: list, llm_config: dict):  # noqa: C901
-    """
-    Constructs and returns a LangChain RunnableSequence from a workflow definition
-    and a global LLM configuration. This function does NOT query the database
-    or read Django settings.
+    def on_llm_start(
+        self,
+        serialized: Dict[str, Any],
+        prompts: List[str],
+        *,
+        run_id: UUID,
+        parent_run_id: Optional[UUID] = None,
+        tags: Optional[List[str]] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        **kwargs: Any,
+    ) -> None:
+        """Run when LLM starts running."""
+        self.start_times[run_id] = time.perf_counter()
 
-    Args:
-        workflow_definition (list): A JSON-like list of dictionaries defining the workflow steps.
-                                    Example: [{"type": "prompt", "prompt_data": {"template": "...", "langchain_type": "PromptTemplate"}},
-                                              {"type": "llm", "config": {"model_name": "gpt-4"}},
-                                              {"type": "parser", "parser_type": "StrOutputParser"}]
-        llm_config (dict): A dictionary containing the default LLM configuration, e.g.,
-                           {"provider": "openai", "model_name": "gpt-3.5-turbo", "temperature": 0.7, "api_key": "..."}.
-                           This is effectively the DJANGO_LLM settings passed in as an argument.
+        model_name = self._get_llm_model_name_from_serialized(serialized)
 
-    Returns:
-        langchain_core.runnables.RunnableSequence: The constructed LangChain chain.
+        self.interaction_log.provider = model_name
+        self.interaction_log.prompt_text = ({"prompts": prompts},)
+        self.interaction_log.metadata = (
+            {
+                "tags": tags,
+                "run_id": str(run_id),
+                "parent_run_id": str(parent_run_id) if parent_run_id else None,
+                **(metadata or {}),
+            },
+        )
+        self.interaction_log.status = "processing"
+        self.interaction_log.model_parameters = serialized.get("kwargs", {})
+        self.interaction_log.input_tokens = 0
+        self.interaction_log.output_tokens = 0
 
-    Raises:
-        ValueError: If the workflow_definition is invalid or components cannot be instantiated.
-        ImportError: If required LangChain libraries are not installed.
-    """
-    chain_components = []
-    for i, step_data in enumerate(workflow_definition):
-        step_type = step_data.get("type")
+        self.interaction_log.save()
 
-        prompt_name = step_data.get("name")
-        if step_type == "prompt":
-            try:
-                chain_components.append(_get_langchain_prompt_object(prompt_name))
-            except Exception as e:
-                raise ValueError(f"Workflow step {i}: Error creating prompt object: {e}")
+    def on_chat_model_start(
+        self,
+        serialized: Dict[str, Any],
+        messages: List[List[BaseMessage]],
+        *,
+        run_id: UUID,
+        parent_run_id: Optional[UUID] = None,
+        tags: Optional[List[str]] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        **kwargs: Any,
+    ) -> None:
+        """Run when Chat Model starts running."""
+        self.start_times[run_id] = time.perf_counter()
 
-        elif step_type == "llm":
-            llm_config_override = step_data.get("config", {})
-            current_llm_config = {
-                **llm_config,
-                **llm_config_override,
-            }
+        model_name = self._get_llm_model_name_from_serialized(serialized)
 
-            llm_provider = current_llm_config.get("DEFAULT_LLM_PROVIDER")
-            model_name = current_llm_config["DEFAULT_CHAT_MODEL"]["name"]
-            temperature = current_llm_config["DEFAULT_CHAT_MODEL"]["temperature"]
-            api_key = os.getenv(f"{llm_provider.upper()}_API_KEY")
+        serializable_messages = []
+        for msg_list in messages:
+            serializable_messages.extend([msg.dict() for msg in msg_list])
 
-            if not llm_provider or not model_name:
-                raise ValueError(
-                    f"Workflow step {i}: LLM step requires 'llm_provider' and 'model_name' in its config or global LLM config."
-                )
+        self.interaction_log.provider = model_name
+        self.interaction_log.prompt_text = {"messages": serializable_messages}
+        self.interaction_log.metadata = (
+            {
+                "tags": tags,
+                "run_id": str(run_id),
+                "parent_run_id": str(parent_run_id) if parent_run_id else None,
+                **(metadata or {}),
+            },
+        )
+        self.interaction_log.status = "processing"
+        self.interaction_log.model_parameters = serialized.get("kwargs", {})
+        self.interaction_log.input_tokens = 0
+        self.interaction_log.output_tokens = 0
 
-            llm_instance = get_chat_model(llm_provider, temperature=temperature, api_key=api_key)
+        self.interaction_log.save()
 
-            chain_components.append(llm_instance)
+    def on_llm_end(
+        self,
+        response,
+        *,
+        run_id: UUID,
+        parent_run_id: Optional[UUID] = None,
+        **kwargs: Any,
+    ) -> None:
+        """Run when LLM ends running."""
+        end_time = time.perf_counter()
+        duration_ms = int((end_time - self.start_times.pop(run_id, end_time)) * 1000)
 
-        elif step_type == "parser":
-            parser_type = step_data.get("parser_type")
-            parser_args = step_data.get("parser_args", {})
+        output_text_parts = []
+        prompt_tokens = 0
+        completion_tokens = 0
 
-            if not parser_type:
-                raise ValueError(f"Workflow step {i}: Parser step requires 'parser_type'.")
+        for generation_list in response.generations:
+            for gen in generation_list:
+                if hasattr(gen, "message") and hasattr(gen.message, "content"):
+                    output_text_parts.append(gen.message.content)
+                elif hasattr(gen, "text"):
+                    output_text_parts.append(gen.text)
 
-            parser_instance = None
-            if parser_type == "StrOutputParser":
-                parser_instance = StrOutputParser(**parser_args)
-            elif parser_type == "JsonOutputParser":
-                parser_instance = JsonOutputParser(**parser_args)
-            else:
-                raise ValueError(f"Workflow step {i}: Unsupported parser type: {parser_type}")
+                if (
+                    hasattr(gen, "message")
+                    and hasattr(gen.message, "response_metadata")
+                    and gen.message.response_metadata
+                ):
+                    usage = gen.message.response_metadata.get("usage", {})
+                    prompt_tokens += usage.get("input_tokens", 0)  # Anthropic
+                    completion_tokens += usage.get("output_tokens", 0)  # Anthropic
+                    prompt_tokens += usage.get("prompt_tokens", 0)  # OpenAI
+                    completion_tokens += usage.get("completion_tokens", 0)  # OpenAI
+                elif hasattr(gen, "response_metadata") and gen.response_metadata:
+                    token_usage = gen.response_metadata.get("token_usage", {})
+                    prompt_tokens += token_usage.get("prompt_tokens", 0)
+                    completion_tokens += token_usage.get("completion_tokens", 0)
 
-            if parser_instance:
-                chain_components.append(parser_instance)
+        self.interaction_log.latency = duration_ms
+        self.interaction_log.response_text = (
+            {
+                "text": "\n---\n".join(output_text_parts),
+                "raw_response": response.dict(),
+            },
+        )
+        self.interaction_log.input_tokens = prompt_tokens
+        self.interaction_log.output_tokens = completion_tokens
 
-        else:
-            raise ValueError(f"Workflow step {i}: Unknown component type: {step_type}")
+        self.interaction_log.save()
 
-    if not chain_components:
-        raise ValueError("Workflow definition is empty or contains no valid components.")
+    def on_llm_error(
+        self,
+        error: Union[Exception, KeyboardInterrupt],
+        *,
+        run_id: UUID,
+        parent_run_id: Optional[UUID] = None,
+        **kwargs: Any,
+    ) -> None:
+        """Run when LLM errors."""
+        end_time = time.perf_counter()
+        duration_ms = int((end_time - self.start_times.pop(run_id, end_time)) * 1000)
 
-    from functools import reduce
+        self.interaction_log.latency = duration_ms
+        self.interaction_log.status = "failure"
+        self.interaction_log.error_message = "error_message"
 
-    return reduce(lambda a, b: a | b, chain_components)
+        self.interaction_log.save()

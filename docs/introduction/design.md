@@ -12,7 +12,7 @@ Django Chain is designed to provide seamless, Django-native integration with Lar
 ## Architecture Overview
 ```
 Django App (django_chain)
-├── Models: Prompt, Workflow, ChatSession, ChatMessage, LLMInteractionLog, etc.
+├── Models: Prompt, Workflow, ChatSession, ChatMessage, InteractionLog, etc.
 ├── Services: LLMClient, PromptManager, ChainExecutor, VectorStoreManager
 ├── Views: REST-style endpoints for prompt/workflow management and LLM execution
 ├── Memory: Utilities for conversation history and memory management

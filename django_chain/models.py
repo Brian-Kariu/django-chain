@@ -14,11 +14,12 @@ Raises:
 """
 
 import logging
+import os
 import uuid
+from functools import reduce
 from typing import Any
 from typing import Optional
 
-from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.db import models
@@ -26,11 +27,10 @@ from django.db.models import Max
 from django.forms.models import model_to_dict
 from django.utils.translation import gettext_lazy as _
 from langchain_core.output_parsers import JsonOutputParser
-from langchain_core.output_parsers import PydanticOutputParser
 from langchain_core.output_parsers import StrOutputParser
 
-from django_chain.exceptions import DjangoChainError
-from django_chain.providers.fake import get_fake_chat_model
+from django_chain.providers import get_chat_model
+from django_chain.utils.llm_client import LoggingHandler
 
 try:
     from langchain_core.prompts import AIMessagePromptTemplate
@@ -340,7 +340,7 @@ class Workflow(models.Model):
         self.is_active = False
         self.save()
 
-    def to_langchain_chain(self) -> Any:  # noqa C901
+    def to_langchain_chain(self, *args, **kwargs) -> Any:  # noqa C901
         """
         Constructs and returns a LangChain RunnableSequence from the workflow definition.
 
@@ -355,53 +355,41 @@ class Workflow(models.Model):
             raise ImportError("LangChain library is not installed. Cannot construct chain.")
 
         chain_components = []
+        llm_config = kwargs.get("llm_config")
         for i, step_data in enumerate(self.workflow_definition):
             step_type = step_data.get("type")
 
+            prompt_name = step_data.get("name")
             if step_type == "prompt":
-                prompt_name = step_data.get("name")
-                if not prompt_name:
-                    raise ValueError(f"Workflow step {i}: Prompt step requires 'name'.")
                 try:
-                    prompt_record = Prompt.objects.get(name__iexact=prompt_name, is_active=True)
-                    chain_components.append(prompt_record.to_langchain_prompt())
-                except Prompt.DoesNotExist:
-                    raise ValueError(f"Workflow step {i}: Active prompt '{prompt_name}' not found.")
-                except Exception as e:
-                    raise ValueError(
-                        f"Workflow step {i}: Error loading prompt '{prompt_name}': {e}"
+                    chain_components.append(
+                        Prompt.objects.get(name=prompt_name).to_langchain_prompt()
                     )
+                except Exception as e:
+                    raise ValueError(f"Workflow step {i}: Error creating prompt object: {e}")
 
             elif step_type == "llm":
                 llm_config_override = step_data.get("config", {})
-                global_llm_config = settings.DJANGO_LLM_SETTINGS
-
-                current_llm_config = {**global_llm_config, **llm_config_override}
+                current_llm_config = {
+                    **llm_config,
+                    **llm_config_override,
+                }
 
                 llm_provider = current_llm_config.get("DEFAULT_LLM_PROVIDER")
                 model_name = current_llm_config["DEFAULT_CHAT_MODEL"]["name"]
                 temperature = current_llm_config["DEFAULT_CHAT_MODEL"]["temperature"]
-                api_key = current_llm_config["DEFAULT_CHAT_MODEL"][
-                    f"{llm_provider.upper()}_API_KEY"
-                ]
+                api_key = os.getenv(f"{llm_provider.upper()}_API_KEY")
+
                 if not llm_provider or not model_name:
                     raise ValueError(
-                        f"Workflow step {i}: LLM step requires 'provider' and 'model_name'."
+                        f"Workflow step {i}: LLM step requires 'llm_provider' and 'model_name' in its config or global LLM config."
                     )
 
-                llm_instance = None
-                if llm_provider == "fake":
-                    if not api_key:
-                        raise ValueError(
-                            f"Workflow step {i}:  LLM requires 'api_key' in LLM config."
-                        )
-                    llm_instance = get_fake_chat_model()
+                llm_instance = get_chat_model(
+                    llm_provider, temperature=temperature, api_key=api_key
+                )
 
-                else:
-                    raise ValueError(f"Workflow step {i}: Unsupported LLM provider: {llm_provider}")
-
-                if llm_instance:
-                    chain_components.append(llm_instance)
+                chain_components.append(llm_instance)
 
             elif step_type == "parser":
                 parser_type = step_data.get("parser_type")
@@ -427,9 +415,19 @@ class Workflow(models.Model):
         if not chain_components:
             raise ValueError("Workflow definition is empty or contains no valid components.")
 
-        from functools import reduce
+        logging_toggle = kwargs.get("log")
+        if logging_toggle == "true":
+            interaction_log = InteractionLog.objects.create(
+                workflow=self,
+            )
+            workflow_chain = reduce(lambda a, b: a | b, chain_components).with_config(
+                callbacks=interaction_log.get_logging_handler(handler="basic")
+            )
+            return workflow_chain
 
-        return reduce(lambda a, b: a | b, chain_components)
+        else:
+            workflow_chain = reduce(lambda a, b: a | b, chain_components)
+            return workflow_chain
 
 
 class ChatSession(models.Model):
@@ -550,12 +548,13 @@ class ChatMessage(models.Model):
         return f"{self.role}: {self.content[:50]}..."
 
 
-class LLMInteractionLog(models.Model):
+class InteractionLog(models.Model):
     """
     Logs LLM interactions for auditing, cost analysis, and debugging.
 
     Attributes:
         user (User): User who initiated the interaction.
+        workflow (Workflow): The associated workflow
         prompt_text (str): Prompt sent to the LLM.
         response_text (str): LLM response.
         model_name (str): Name of the LLM model used.
@@ -570,75 +569,65 @@ class LLMInteractionLog(models.Model):
         metadata (dict): Additional metadata.
     """
 
-    user = models.ForeignKey(
-        User,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        help_text=_("User who initiated the interaction"),
-    )
-    prompt_text = models.TextField(_("prompt text"))
-    response_text = models.TextField(_("response text"))
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
+    workflow = models.ForeignKey(Workflow, on_delete=models.SET_NULL, null=True, blank=True)
+    # TODO: Make an appropriate name
+    prompt_text = models.JSONField(default=dict, null=True, blank=True)
+    response_text = models.TextField(null=True, blank=True)
     model_name = models.CharField(
-        _("model name"),
-        max_length=100,
-        help_text=_("Name of the LLM model used"),
+        max_length=100, help_text=_("Name of the LLM model used"), null=False, blank=False
     )
-    provider = models.CharField(
-        _("provider"),
-        max_length=50,
-        help_text=_("LLM provider (e.g., openai, google)"),
-    )
-    input_tokens = models.IntegerField(_("input tokens"), null=True, blank=True)
-    output_tokens = models.IntegerField(_("output tokens"), null=True, blank=True)
-    total_cost = models.DecimalField(
-        _("total cost"),
-        max_digits=10,
-        decimal_places=8,
-        null=True,
-        blank=True,
-        help_text=_("Estimated cost of the interaction in USD"),
-    )
+    provider = models.CharField(max_length=50, null=False, blank=False)
+    input_tokens = models.IntegerField(null=True, blank=True)
+    output_tokens = models.IntegerField(null=True, blank=True)
+    model_parameters = models.JSONField(default=dict, null=True, blank=True)
     latency_ms = models.IntegerField(
-        _("latency ms"),
         null=True,
         blank=True,
-        help_text=_("Latency of the LLM API call in milliseconds"),
     )
     status = models.CharField(
-        _("status"),
         max_length=20,
-        choices=[("success", "Success"), ("error", "Error")],
+        choices=[("processing", "Processing"), ("success", "Success"), ("error", "Error")],
         default="success",
     )
     error_message = models.TextField(
-        _("error message"),
         blank=True,
         null=True,
-        help_text=_("Error message if the interaction failed"),
     )
-    created_at = models.DateTimeField(_("created at"), auto_now_add=True)
     metadata = models.JSONField(
-        _("metadata"),
         default=dict,
+        null=True,
         blank=True,
-        help_text=_("Additional arbitrary metadata"),
     )
 
     class Meta:
         verbose_name = _("LLM Interaction Log")
         verbose_name_plural = _("LLM Interaction Logs")
-        ordering = ["-created_at"]
-        indexes = [
-            models.Index(fields=["created_at"]),
-            models.Index(fields=["user", "created_at"]),
-        ]
+        ordering = ["-workflow"]
 
     def __str__(self) -> str:
         """
         Return a string representation of the LLM interaction log.
         """
         return f"Log {self.pk} - {self.model_name} ({self.status})"
+
+    def to_dict(self) -> dict:
+        """
+        Returns a dictionary representation of the Workflow instance for API responses.
+
+        Returns:
+            dict: Dictionary with workflow fields.
+        """
+        data = model_to_dict(self, exclude=["id"])
+        data["id"] = str(self.id)
+        return data
+
+    def get_logging_handler(self, handler):
+        handlers = []
+        if handler == "basic":
+            handlers.append(LoggingHandler(interaction_log=self))
+        return handlers
 
 
 class UserInteractionManager(models.Manager):
@@ -782,135 +771,3 @@ class UserInteraction(models.Model):
         if error_message is not None:
             self.error_message = error_message
         self.save()
-
-
-class InteractionLogManager(models.Manager):
-    """
-    Manager for InteractionLog, providing helper for step log creation.
-    """
-
-    def create_step_log(
-        self,
-        user_interaction,
-        step_order: int,
-        step_type: str,
-        component_name: str,
-        input_to_step: dict,
-        output_from_step: dict,
-        metadata: dict,
-        duration_ms: int,
-        status: str = "success",
-        error_message: Optional[str] = None,
-    ) -> "InteractionLog":
-        """
-        Create a step log for a workflow execution step.
-
-        Args:
-            user_interaction (UserInteraction): Parent interaction.
-            step_order (int): Step order.
-            step_type (str): Type of step.
-            component_name (str): Name of component.
-            input_to_step (dict): Input payload.
-            output_from_step (dict): Output payload.
-            metadata (dict): Step metadata.
-            duration_ms (int): Step duration in ms.
-            status (str): Step status.
-            error_message (str, optional): Error message.
-
-        Returns:
-            InteractionLog: The created log entry.
-        """
-        return self.create(
-            user_interaction=user_interaction,
-            step_order=step_order,
-            step_type=step_type,
-            component_name=component_name,
-            input_to_step=input_to_step,
-            output_from_step=output_from_step,
-            metadata=metadata,
-            duration_ms=duration_ms,
-            status=status,
-            error_message=error_message,
-        )
-
-
-class InteractionLog(models.Model):
-    """
-    Records detailed step-by-step information for each component within a workflow execution.
-
-    Attributes:
-        id (UUID): Unique identifier.
-        user_interaction (UserInteraction): Parent interaction.
-        step_order (int): Step order in workflow.
-        step_type (str): Type of component (prompt, llm, parser).
-        component_name (str): Name of the component.
-        input_to_step (dict): Input payload.
-        output_from_step (dict): Output payload.
-        metadata (dict): Step metadata.
-        duration_ms (int): Step duration in ms.
-        status (str): Step status.
-        error_message (str): Error message if failed.
-    """
-
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    user_interaction = models.ForeignKey(
-        "UserInteraction",
-        on_delete=models.CASCADE,
-        related_name="logs",
-        help_text=_("The parent user interaction this log entry belongs to."),
-    )
-    step_order = models.PositiveIntegerField(
-        help_text=_("The sequential order of this step within the workflow execution.")
-    )
-    step_type = models.CharField(
-        max_length=50,
-        help_text=_("Type of the LangChain component (e.g., 'prompt', 'llm', 'parser')."),
-    )
-    component_name = models.CharField(
-        max_length=255,
-        blank=True,
-        null=True,
-        help_text=_("Name of the specific component used (e.g., Prompt name, LLM model name)."),
-    )
-    input_to_step = models.JSONField(
-        blank=True,
-        null=True,
-        help_text=_("The input payload received by this specific component in the chain."),
-    )
-    output_from_step = models.JSONField(
-        blank=True,
-        null=True,
-        help_text=_("The output payload generated by this specific component in the chain."),
-    )
-    metadata = models.JSONField(
-        blank=True,
-        null=True,
-        help_text=_(
-            "Additional step-specific metadata (e.g., token usage for LLM, finish reason)."
-        ),
-    )
-    duration_ms = models.PositiveIntegerField(
-        default=0, help_text=_("Time taken for this specific step in milliseconds.")
-    )
-    status = models.CharField(
-        max_length=50,
-        default="success",
-        help_text=_("Status of this individual step ('success', 'failure')."),
-    )
-    error_message = models.TextField(
-        blank=True, null=True, help_text=_("Error message if this step failed.")
-    )
-
-    objects = InteractionLogManager()
-
-    class Meta:
-        verbose_name = _("Interaction Log")
-        verbose_name_plural = _("Interaction Logs")
-        ordering = ["user_interaction", "step_order"]
-        unique_together = (("user_interaction", "step_order"),)
-
-    def __str__(self):
-        """
-        Return a string representation of the interaction log.
-        """
-        return f"Log for {self.user_interaction} - Step {self.step_order} ({self.step_type})"

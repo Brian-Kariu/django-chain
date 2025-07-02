@@ -7,7 +7,6 @@ from django_chain.models import (
     Workflow,
     ChatSession,
     ChatMessage,
-    LLMInteractionLog,
     UserInteraction,
     InteractionLog,
 )
@@ -102,13 +101,6 @@ class TestChatMessage:
 
 
 @pytest.mark.django_db
-class TestLLMInteractionLog:
-    def test_creation_and_string_output(self):
-        log = baker.make(LLMInteractionLog, model_name="gpt-4", status="success")
-        assert "gpt-4" in str(log)
-
-
-@pytest.mark.django_db
 class TestUserInteraction:
     def test_manager_methods(self):
         workflow = baker.make(
@@ -149,26 +141,12 @@ class TestUserInteraction:
 
 @pytest.mark.django_db
 class TestInteractionLog:
-    def test_manager_create_step_log(self):
-        user_interaction = baker.make(UserInteraction)
-        log = InteractionLog.objects.create_step_log(
-            user_interaction=user_interaction,
-            step_order=1,
-            step_type="prompt",
-            component_name="PromptX",
-            input_to_step={"text": "hello"},
-            output_from_step={"text": "hi"},
-            metadata={},
-            duration_ms=10,
-        )
-        assert log.component_name == "PromptX"
-
     def test_str_output(self):
-        interaction = baker.make(UserInteraction)
-        log = baker.make(
-            InteractionLog, user_interaction=interaction, step_order=1, step_type="llm"
-        )
-        assert f"Step {log.step_order}" in str(log)
+        id = 8392382
+        model_name = "fake"
+        status = "success"
+        log = baker.make(InteractionLog, id=id, model_name=model_name, status=status)
+        assert f"Log {id} - {model_name} ({status})" in str(log)
 
 
 @pytest.mark.django_db
@@ -194,7 +172,8 @@ def test_to_langchain_prompt_valid_cases(langchain_type, template, variables):
         template_data["messages"] = template
 
     prompt = Prompt.objects.create(name=f"{langchain_type}-test", prompt_template=template_data)
-    prompt.to_langchain_prompt()
+    chain = prompt.to_langchain_prompt()
+    assert chain is not None
 
 
 @pytest.mark.django_db
@@ -211,8 +190,11 @@ def test_workflow_to_langchain_chain_prompt_only(monkeypatch):
         },
     )
     workflow = baker.make(Workflow, workflow_definition=[{"type": "prompt", "name": prompt.name}])
-    chain = workflow.to_langchain_chain()
-    assert chain
+    chain_no_logging = workflow.to_langchain_chain()
+    assert chain_no_logging
+
+    chain_with_logging = workflow.to_langchain_chain(log="true")
+    assert chain_with_logging is not None
 
 
 def test_workflow_llm_fake(monkeypatch, settings):
@@ -225,8 +207,17 @@ def test_workflow_llm_fake(monkeypatch, settings):
             "FAKE_API_KEY": "test-key",
         },
     }
+    global_config = {
+        "DEFAULT_LLM_PROVIDER": "fake",
+        "DEFAULT_CHAT_MODEL": {
+            "name": "mock",
+            "temperature": 0.5,
+            "FAKE_API_KEY": "test-key",
+        },
+    }
+
     wf = baker.make(Workflow, workflow_definition=[{"type": "llm"}])
-    assert wf.to_langchain_chain()
+    assert wf.to_langchain_chain(llm_config=global_config)
 
 
 def test_prompt_template_must_be_dict():
@@ -245,5 +236,11 @@ def test_prompt_to_dict():
             "input_variables": ["name"],
         },
     )
+    d = p.to_dict()
+    assert d["id"] == str(p.id)
+
+
+def test_interactionlog_to_dict():
+    p = baker.make(InteractionLog)
     d = p.to_dict()
     assert d["id"] == str(p.id)

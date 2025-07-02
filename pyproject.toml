@@ -81,13 +81,14 @@ docs = [
     "mkdocs-gen-files",
     "mkdocs-literate-nav",
     "mkdocs-section-index",
-    "mkdocs-material"
+    "mkdocs-material",
+    "pylinkvalidator",
 ]
 
 [project.urls]
 homepage = "https://github.com/Brian-Kariu/django-chain/"
 repository = "https://github.com/Brian-Kariu/django-chain/"
-documentation = "https://github.com/Brian-Kariu/django-chain/blob/main/README.md"
+documentation = "https://django-chain.onrender.com/introduction/design/"
 changelog = "https://github.com/Brian-Kariu/django-chain/blob/main/CHANGELOG.md"
 "Bug Tracker" = "https://github.com/Brian-Kariu/django-chain/issues"
 

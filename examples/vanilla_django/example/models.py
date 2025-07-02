@@ -7,16 +7,6 @@ import uuid
 from django.db import models
 
 
-class Joke(models.Model):
-    id = models.UUIDField(default=uuid.uuid4, editable=False, unique=True, primary_key=True)
-    setup = models.CharField(
-        max_length=255, null=False, blank=False, help_text="Question to setup joke"
-    )
-    punchline = models.CharField(
-        max_length=255, null=False, blank=False, help_text="Answer to resolve the joke"
-    )
-
-
 class TestChain(models.Model):
     """Test model for chain operations."""
 

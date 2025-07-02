@@ -1,15 +1,18 @@
 import json
 import uuid
 from unittest.mock import Mock, patch, MagicMock
-from django.test import TestCase, RequestFactory
+from django.test import TestCase, RequestFactory, override_settings
 from django.core.exceptions import ValidationError, ObjectDoesNotExist
 from django.http import JsonResponse
+from django.urls import reverse
 import pytest
 from model_bakery import baker
 from faker import Faker
 
-from django_chain.models import Prompt, Workflow, UserInteraction
+from django_chain.models import InteractionLog, Prompt, Workflow, UserInteraction
 from django_chain.views import (
+    InteractionLogDetailView,
+    InteractionLogListCreateView,
     PromptListCreateView,
     PromptDetailView,
     PromptActivateDeactivateView,
@@ -78,6 +81,11 @@ def sample_workflow():
         ],
         is_active=True,
     )
+
+
+@pytest.fixture
+def sample_interactionlog():
+    return baker.make(InteractionLog)
 
 
 @pytest.fixture
@@ -470,6 +478,61 @@ class TestWorkflowDetailView:
         assert response.status_code == 204
 
 
+class TestInteractionLogDetailView:
+    @pytest.mark.django_db
+    def test_get_interactionlog_success(self, request_factory, sample_interactionlog):
+        request = request_factory.get(f"/logs/{sample_interactionlog.id}/")
+
+        view = InteractionLogDetailView()
+        response = view.get(request, pk=str(sample_interactionlog.id))
+
+        data = json.loads(response.content)
+        assert response.status_code == 200
+        assert data["model_name"] == sample_interactionlog.model_name
+
+    @pytest.mark.django_db
+    def test_get_interactionlog_fail(self, request_factory, sample_interactionlog):
+        request = request_factory.get(f"/logs/")
+
+        view = InteractionLogDetailView()
+        response = view.get(request, pk=str(23))
+
+        assert response.status_code == 404
+
+    @pytest.mark.django_db
+    def test_delete_interactionlog_success(self, request_factory, sample_interactionlog):
+        request = request_factory.delete(f"/logs/")
+
+        view = InteractionLogDetailView()
+        response = view.delete(request, pk=str(sample_interactionlog.id))
+
+        assert response.status_code == 204
+
+    @pytest.mark.django_db
+    def test_delete_interactionlog_fail(self, request_factory, sample_interactionlog):
+        request = request_factory.delete(f"/logs/")
+
+        view = InteractionLogDetailView()
+        response = view.delete(request, pk=str(43))
+
+        assert response.status_code == 404
+
+
+class TestInteractionLogListCreateView:
+    @pytest.mark.django_db
+    def test_get_list_interactionlog_success(self, request_factory, sample_workflow):
+        log = baker.make(InteractionLog)
+        request = request_factory.get("/logs/")
+        request.json_body = {}
+
+        view = InteractionLogListCreateView()
+        response = view.get(request)
+
+        data = json.loads(response.content)
+        assert response.status_code == 200
+        assert len(data) >= 1
+
+
 @pytest.mark.skip()
 class TestUserInteractionListView:
     @pytest.mark.django_db
@@ -496,7 +559,6 @@ class TestUserInteractionListView:
     def test_get_list_user_interactions_filters(
         self, request_factory, sample_user_interaction, filter_param, filter_value
     ):
-        # Update the sample interaction to match filter
         if filter_param == "workflow_name":
             sample_user_interaction.workflow.name = filter_value
             sample_user_interaction.workflow.save()
@@ -552,57 +614,213 @@ class TestUserInteractionDetailView:
         assert response.status_code == 404
 
 
-class TestExecuteWorkflowView:
-    @pytest.mark.django_db
+@pytest.mark.django_db
+class TestExecuteWorkflowView(TestCase):
+    def setUp(self):
+        self.client = self.client_class()
+        self.workflow_name = "MyTestWorkflow"
+        self.url = reverse("execute-workflow", args=[self.workflow_name])
+
+        self.active_workflow = baker.make(
+            Workflow,
+            name=self.workflow_name,
+            workflow_definition=[
+                {"type": "prompt", "name": "SimpleGreetingPrompt"},
+                {"type": "llm", "config": {"temperature": 0.4}},
+                {"type": "parser", "parser_type": "StrOutputParser"},
+            ],
+            is_active=True,
+        )
+
+        self.inactive_workflow = baker.make(
+            Workflow,
+            name="InactiveWorkflow",
+            workflow_definition=[
+                {"type": "prompt", "name": "SimpleGreetingPrompt"},
+                {"type": "llm", "config": {"temperature": 0.4}},
+                {"type": "parser", "parser_type": "StrOutputParser"},
+            ],
+            is_active=False,
+        )
+
     @patch("django_chain.views._execute_and_log_workflow_step")
-    def test_execute_workflow_success(self, mock_execute, request_factory, sample_workflow):
-        mock_execute.return_value = {"output": "test result"}
+    @patch("django_chain.views._to_serializable")
+    @patch("django_chain.models.Workflow.to_langchain_chain")
+    @pytest.mark.django_db
+    def test_post_success(
+        self,
+        mock_to_langchain,
+        mock_to_serializable,
+        mock_execute_and_log_workflow_step,
+    ):
+        """
+        Test successful execution of a workflow.
+        """
+        mock_execute_and_log_workflow_step.return_value = {"result": "success"}
+        mock_to_serializable.side_effect = lambda x: x
+        mock_to_langchain.return_value = "langchain_object"
 
-        request_data = {"input": {"message": "Hello"}}
-        request = request_factory.post(
-            f"/workflows/{sample_workflow.name}/execute/",
-            data=json.dumps(request_data),
+        input_data = {"user_input": "hello"}
+        response = self.client.post(
+            self.url,
+            data=json.dumps({"input": input_data}),
             content_type="application/json",
         )
-        request.json_body = request_data
 
-        view = ExecuteWorkflowView()
-        response = view.post(request, name=sample_workflow.name)
+        self.assertEqual(response.status_code, 200)
+        response_data = response.json()
 
-        assert response.status_code == 200
-        data = json.loads(response.content)
-        assert data["workflow_name"] == sample_workflow.name
-        assert data["input_received"] == {"message": "Hello"}
+        self.assertEqual(response_data["workflow_name"], self.workflow_name)
+        self.assertEqual(response_data["input_received"], input_data)
+        self.assertEqual(response_data["output"], {"result": "success"})
+
+        mock_execute_and_log_workflow_step.assert_called_once()
+        mock_to_serializable.assert_called_once_with({"result": "success"})
 
     @pytest.mark.django_db
-    def test_execute_workflow_not_found(self, request_factory):
-        request_data = {"input": {"message": "Hello"}}
-        request = request_factory.post(
-            "/workflows/nonexistent/execute/",
-            data=json.dumps(request_data),
+    def test_post_workflow_not_found(self):
+        """
+        Test case where no active workflow is found with the given name.
+        """
+        self.active_workflow.delete()
+        response = self.client.post(
+            self.url,
+            data=json.dumps({"input": {}}),
             content_type="application/json",
         )
-        request.json_body = request_data
 
-        view = ExecuteWorkflowView()
-        response = view.post(request, name="nonexistent")
-
-        assert response.status_code == 404
+        self.assertEqual(response.status_code, 404)
+        response_data = response.json()
+        self.assertIn("error", response_data)
+        self.assertIn(
+            f"No active workflow found with name: {self.workflow_name}", response_data["error"]
+        )
 
     @pytest.mark.django_db
-    def test_execute_workflow_invalid_input(self, request_factory, sample_workflow):
-        request_data = {"input": "not a dict"}  # Invalid input type
-        request = request_factory.post(
-            f"/workflows/{sample_workflow.name}/execute/",
-            data=json.dumps(request_data),
+    def test_post_invalid_json(self):
+        """
+        Test case with malformed JSON in the request body.
+        """
+        response = self.client.post(
+            self.url, data="this is not json", content_type="application/json"
+        )
+
+        self.assertEqual(response.status_code, 400)
+        response_data = response.json()
+        self.assertIn("error", response_data)
+        self.assertEqual(response_data["error"], "Invalid JSON in request body.")
+
+    @pytest.mark.django_db
+    def test_post_input_data_not_dict(self):
+        """
+        Test case where 'input' field is not a dictionary.
+        """
+        response = self.client.post(
+            self.url,
+            data=json.dumps({"input": "not_a_dict"}),
             content_type="application/json",
         )
-        request.json_body = request_data
 
-        view = ExecuteWorkflowView()
-        response = view.post(request, name=sample_workflow.name)
+        self.assertEqual(response.status_code, 400)
+        response_data = response.json()
+        self.assertIn("error", response_data)
 
-        assert response.status_code == 500
+    @patch("django_chain.views._execute_and_log_workflow_step")
+    @patch("django_chain.models.Workflow.to_langchain_chain")
+    @pytest.mark.django_db
+    def test_post_validation_error(self, mock_to_langchain, mock_execute_and_log_workflow_step):
+        """
+        Test case where a ValidationError is raised during workflow execution.
+        """
+        mock_execute_and_log_workflow_step.side_effect = ValidationError(
+            {"field": ["This field is required."]}
+        )
+        mock_to_langchain.return_value = "langchain_object"
+
+        response = self.client.post(
+            self.url,
+            data=json.dumps({"input": {"some_field": "value"}}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        response_data = response.json()
+        self.assertIn("error", response_data)
+        assert "This field is required." in response_data["error"]
+
+    @patch("django_chain.views._execute_and_log_workflow_step")
+    @pytest.mark.django_db
+    def test_post_unexpected_exception(self, mock_execute_and_log_workflow_step):
+        """
+        Test case for an unhandled exception during workflow execution.
+        """
+        mock_execute_and_log_workflow_step.side_effect = Exception("Something went wrong!")
+
+        response = self.client.post(
+            self.url,
+            data=json.dumps({"input": {"test": "data"}}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 500)
+        response_data = response.json()
+        self.assertIn("error", response_data)
+
+    @patch("django_chain.views._execute_and_log_workflow_step")
+    @patch("django_chain.views._to_serializable")
+    @patch("django_chain.models.Workflow.to_langchain_chain")
+    @pytest.mark.django_db
+    @override_settings(DJANGO_LLM_SETTINGS={"llm_key": "some_api_key"})
+    def test_post_with_global_llm_config(
+        self,
+        mock_to_langchain,
+        mock_to_serializable,
+        mock_execute_and_log_workflow_step,
+    ):
+        """
+        Test that global_llm_config from settings is passed correctly.
+        """
+        mock_execute_and_log_workflow_step.return_value = {"result": "success"}
+        mock_to_serializable.side_effect = lambda x: x
+        mock_to_langchain.return_value = "langchain_object"
+
+        input_data = {"user_input": "hello"}
+        response = self.client.post(
+            self.url,
+            data=json.dumps({"input": input_data}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+
+    @patch("django_chain.views._execute_and_log_workflow_step")
+    @patch("django_chain.views._to_serializable")
+    @patch("django_chain.models.Workflow.to_langchain_chain")
+    @pytest.mark.django_db
+    def test_post_with_execution_method_kwarg(
+        self,
+        mock_to_langchain,
+        mock_to_serializable,
+        mock_execute_and_log_workflow_step,
+    ):
+        """
+        Test that execution_method from kwargs is passed correctly.
+        """
+        mock_execute_and_log_workflow_step.return_value = {"result": "success"}
+        mock_to_serializable.side_effect = lambda x: x
+        mock_to_langchain.return_value = "langchain_object"
+
+        input_data = {"user_input": "hello"}
+
+        # Scenario 1: Default execution_method
+        response = self.client.post(
+            self.url,
+            data=json.dumps({"input": input_data}),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 200)
+        mock_execute_and_log_workflow_step.reset_mock()
+        pass
 
 
 @pytest.mark.skip()

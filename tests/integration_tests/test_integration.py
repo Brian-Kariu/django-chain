@@ -11,7 +11,6 @@ from django.test import Client, TestCase
 from django.urls import reverse
 
 from django_chain.models import ChatSession
-from django_chain.models import LLMInteractionLog
 from django_chain.services.llm_client import LLMClient
 from django_chain.services.vector_store_manager import VectorStoreManager
 from examples.vanilla_django.example.models import TestChain
@@ -31,7 +30,6 @@ class TestProjectIntegration(TestCase):
 
         # Get model classes
         self.ChatSession = ChatSession
-        self.LLMInteractionLog = LLMInteractionLog
 
     @pytest.mark.skip()
     def test_llm_call(self):
@@ -82,18 +80,6 @@ class TestProjectIntegration(TestCase):
 
         # Verify document was created
         self.assertTrue(TestDocument.objects.filter(id=data["document_id"]).exists())
-
-    @pytest.mark.skip()
-    def test_llm_interaction_logging(self):
-        """Test that LLM interactions are properly logged."""
-        # Make an LLM call
-        self.client.post(reverse("testapp:test_llm"), content_type="application/json")
-
-        # Verify interaction was logged
-        self.assertTrue(self.LLMInteractionLog.objects.exists())
-        log = self.LLMInteractionLog.objects.first()
-        self.assertEqual(log.status, "success")
-        self.assertEqual(log.provider, "fake")
 
     @pytest.mark.skip()
     def test_model_relationships(self):
