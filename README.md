@@ -1,14 +1,28 @@
-# Django Chain
-A Django library for seamless LangChain integration, making it easy to add LLM capabilities to your Django applications.
-This is a reusable Django application that provides a robust framework for defining, managing, and executing multi-step Large Language Model (LLM) workflows. It offers a set of API endpoints to interact with prompts, workflows, and their execution, enabling dynamic LLM applications without direct code changes for each new workflow.
+<h1 align="center" style="border-bottom: none; text-align: center;">Django Chain</h1>
+<p align="center" style="text-align: center;">A Django library for seamless LangChain integration, making it easy to add LLM capabilities to your Django applications.</p>
+
+<div align="center" style="text-align: center;">
 
 ![Python](https://img.shields.io/python/required-version-toml?tomlFilePath=https%3A%2F%2Fraw.githubusercontent.com%2FBrian-Kariu%2Fdjango-chain%2Fmain%2Fpyproject.toml)
 [![pre-commit](https://img.shields.io/badge/pre--commit-enabled-brightgreen?logo=pre-commit&logoColor=white)](https://github.com/pre-commit/pre-commit)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![pre-commit](https://img.shields.io/badge/pre--commit-enabled-brightgreen?logo=pre-commit&logoColor=white)](https://github.com/pre-commit/pre-commit)
+[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
+[![documentation](https://img.shields.io/badge/docs-mkdocs-708FCC.svg?style=flat)](https://django-chain.onrender.com/)
+
+</div>
+<div align="center" style="text-align: center;">
+
 [![codecov](https://codecov.io/gh/Brian-Kariu/django-chain/graph/badge.svg?token=C2C53JBPKO)](https://codecov.io/gh/Brian-Kariu/django-chain)
 ![GitHub Actions Workflow Status](https://img.shields.io/github/actions/workflow/status/Brian-Kariu/django-chain/ci.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
-[![documentation](https://img.shields.io/badge/docs-mkdocs-708FCC.svg?style=flat)](https://mkdocstrings.github.io/)
+
+</div>
+
+---
+This is a reusable Django application that provides a robust framework for defining, managing, and executing multi-step Large Language Model (LLM) workflows. It offers a set of API endpoints to interact with prompts, workflows, and their execution, enabling dynamic LLM applications without direct code changes for each new workflow. You can find the documentation [here](https://github.com/Brian-Kariu/django-chain/blob/main/README.md).
+
+> [!WARNING]
+> This project is currently in early alpha and is still a work in progress. You could possibly experience specific builds failing to run, loss of data between upgrades and a lot of bugs. It is highly encouraged you wait for a stable release.
 
 ## Features
 
@@ -17,6 +31,7 @@ This is a reusable Django application that provides a robust framework for defin
 - Built-in utilities for common LLM tasks
 - Type-safe and well-documented API
 - Comprehensive test coverage
+- Customizable LLM logging and telemetry
 - Production-ready with proper error handling
 
 ## Core Concepts
@@ -24,7 +39,7 @@ This is a reusable Django application that provides a robust framework for defin
 - Workflow: A sequence of ordered steps, each defining an action to be performed (e.g., format a prompt, call an LLM, parse JSON output, use a tool). Workflows orchestrate the flow of data through these steps.
 
 ## Prerequisites
-1. Python 3.8+
+1. Python 3.9+
 2. Django 4.0+
 
 ## Installation

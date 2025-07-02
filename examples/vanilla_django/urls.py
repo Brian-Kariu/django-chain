@@ -8,6 +8,5 @@ from django.urls import path
 
 urlpatterns = [
     path("admin/", admin.site.urls),
-    path("test/", include("vanilla_django.example.urls", namespace="testapp")),
     path("django-chain/", include("django_chain.urls")),
 ]

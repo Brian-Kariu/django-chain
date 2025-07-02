@@ -21,7 +21,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 from django.views import View
 
-from django_chain.models import Prompt
+from django_chain.models import InteractionLog, Prompt
 
 from .services.llm_client import LLMClient
 from .services.vector_store_manager import VectorStoreManager
@@ -69,16 +69,6 @@ def serialize_user_interaction(user_interaction, include_logs=False):
     data["input_data"] = user_interaction.input_data
     data["llm_output"] = user_interaction.llm_output
 
-    if include_logs:
-        logs_data = []
-        for log_entry in user_interaction.logs.all().order_by("step_order"):
-            log_dict = model_to_dict(log_entry, exclude=["id", "user_interaction"])
-            log_dict["id"] = str(log_entry.id)
-            log_dict["input_to_step"] = log_entry.input_to_step
-            log_dict["output_from_step"] = log_entry.output_from_step
-            log_dict["metadata"] = log_entry.metadata
-            logs_data.append(log_dict)
-        data["interaction_logs"] = logs_data
     return data
 
 
@@ -353,6 +343,41 @@ class WorkflowDetailView(
             return self.json_error_response(str(e), status=500)
 
 
+class InteractionLogListCreateView(JSONResponseMixin, ModelListMixin, ModelCreateMixin, View):
+    model_class = InteractionLog
+    serializer_method = lambda view, w: w.to_dict()
+    required_fields = ["model_name", "provider"]
+
+    def get(self, request, *args, **kwargs):
+        logs = self.get_queryset(request)
+        data = [self.serializer_method(w) for w in logs]
+        return self.render_json_response(data, safe=False)
+
+
+class InteractionLogDetailView(
+    JSONResponseMixin, ModelRetrieveMixin, ModelUpdateMixin, ModelDeleteMixin, View
+):
+    model_class = InteractionLog
+    serializer_method = lambda view, w: w.to_dict()
+
+    def get(self, request, pk, *args, **kwargs):
+        log = self.get_object(pk)
+        if log is None:
+            return self.json_error_response("Interaction Log not found.", status=404)
+        return self.render_json_response(self.serializer_method(log))
+
+    def delete(self, request, pk, *args, **kwargs):
+        log = self.get_object(pk)
+        if log is None:
+            return self.json_error_response("Log not found.", status=404)
+
+        try:
+            self.delete_object(log)
+            return self.render_json_response({"message": "Log deleted successfully."}, status=204)
+        except Exception as e:
+            return self.json_error_response(str(e), status=500)
+
+
 class WorkflowActivateDeactivateView(
     JSONResponseMixin, ModelRetrieveMixin, ModelActivateDeactivateMixin, View
 ):
@@ -422,16 +447,22 @@ class ExecuteWorkflowView(JSONResponseMixin, View):
         try:
             request_data = request.json_body
             input_data = request_data.get("input", {})
+            execution_method = request_data.get("execution_method", "INVOKE")
+            execution_config = request_data.get("execution_config", {})
 
             if not isinstance(input_data, dict):
-                raise ValueError("Input data must be a JSON object.")
+                raise ValidationError("Input data must be a JSON object.")
 
             workflow_record = Workflow.objects.get(name__iexact=name, is_active=True)
 
             global_llm_config = getattr(settings, "DJANGO_LLM_SETTINGS", {})
 
+            workflow_chain = workflow_record.to_langchain_chain(
+                llm_config=global_llm_config, log="true"
+            )
+
             response = _execute_and_log_workflow_step(
-                input_data, workflow_record, global_llm_config
+                workflow_chain, input_data, execution_method, execution_config
             )
 
         except ObjectDoesNotExist:
@@ -441,8 +472,7 @@ class ExecuteWorkflowView(JSONResponseMixin, View):
             overall_error_message = "Invalid JSON in request body."
             return self.json_error_response(overall_error_message, status=400)
         except ValidationError as e:
-            overall_error_message = e.message_dict
-            return self.json_error_response(overall_error_message, status=400)
+            return self.json_error_response(str(e), status=400)
         except Exception as e:
             overall_error_message = f"An unexpected error occurred: {str(e)}"
             return self.json_error_response(overall_error_message, status=500)

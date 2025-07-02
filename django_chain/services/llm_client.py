@@ -10,7 +10,6 @@ from django.conf import settings
 
 from django_chain.exceptions import LLMProviderAPIError, MissingDependencyError
 from django_chain.providers import get_chat_model, get_embedding_model
-from django_chain.models import LLMInteractionLog
 
 logger = logging.getLogger(__name__)
 
@@ -62,42 +61,6 @@ class LLMClient:
 
             model = get_chat_model(provider=provider, **model_config)
 
-            # Wrap the model's invoke method to log interactions
-            original_invoke = model.invoke
-
-            def invoke_with_logging(*args, **kwargs):
-                start_time = time.time()
-                try:
-                    response = original_invoke(*args, **kwargs)
-                    latency_ms = int((time.time() - start_time) * 1000)
-
-                    # Log successful interaction
-                    LLMInteractionLog.objects.create(
-                        prompt_text=str(args[0]) if args else str(kwargs.get("input", "")),
-                        response_text=response.content,
-                        model_name=model.model_name,
-                        provider=provider,
-                        status="success",
-                        latency_ms=latency_ms,
-                    )
-
-                    return response
-                except Exception as e:
-                    latency_ms = int((time.time() - start_time) * 1000)
-
-                    # Log failed interaction
-                    LLMInteractionLog.objects.create(
-                        prompt_text=str(args[0]) if args else str(kwargs.get("input", "")),
-                        model_name=model.model_name,
-                        provider=provider,
-                        status="error",
-                        error_message=str(e),
-                        latency_ms=latency_ms,
-                    )
-
-                    raise
-
-            model.invoke = invoke_with_logging
             return model
 
         except ImportError as e:
