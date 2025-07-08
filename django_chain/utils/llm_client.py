@@ -25,9 +25,10 @@ from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.embeddings import Embeddings
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import BaseMessage
+from langchain_core.runnables.history import RunnableWithMessageHistory
 
-# TODO: Add custom logging
-LOGGER = logging.getLogger(__name__)
+from django_chain.utils import LOGGER
+from django_chain.utils.memory_manager import _get_memory_implementation
 
 
 def create_llm_chat_client(provider: str, **kwargs) -> BaseChatModel | None:
@@ -111,7 +112,7 @@ def _to_serializable(obj: Any) -> Any:
 
 
 def _execute_and_log_workflow_step(
-    workflow_chain, current_input: Any, execution_method: str, execution_config: dict = {}
+    workflow_chain, current_input: Any, execution_method: str, execution_config: dict
 ) -> Any:
     """
     Executes a single step of the workflow, handles its logging, and returns its output.
@@ -288,3 +289,18 @@ class LoggingHandler(BaseCallbackHandler):
         self.interaction_log.error_message = "error_message"
 
         self.interaction_log.save()
+
+
+def add_wrapper_function(chain, function_name="runnable_with_message_history", **kwargs):
+    memory_config = settings.DJANGO_LLM_SETTINGS.get("MEMORY")
+    memory_store = memory_config.get("STORE")
+    memory_implementation = _get_memory_implementation(memory_store)
+    WRAPPER_FUNCTIONS = {"runnable_with_message_history": RunnableWithMessageHistory}
+    input_messages_key = kwargs.get("input_messages_key")
+    history_messages_key = kwargs.get("history_messages_key")
+    return WRAPPER_FUNCTIONS[function_name](
+        chain,
+        get_session_history=memory_implementation,
+        input_messages_key=input_messages_key,
+        history_messages_key=history_messages_key,
+    )
