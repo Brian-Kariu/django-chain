@@ -21,6 +21,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 from django.views import View
 
+from django_chain.exceptions import PromptValidationError
 from django_chain.models import InteractionLog, Prompt
 
 from .services.llm_client import LLMClient
@@ -29,7 +30,7 @@ from .services.vector_store_manager import VectorStoreManager
 from django.core.exceptions import ValidationError, ObjectDoesNotExist
 from django.db import transaction, models
 
-from django_chain.models import Prompt, Workflow, UserInteraction
+from django_chain.models import Prompt, Workflow
 from django_chain.utils.llm_client import (
     _execute_and_log_workflow_step,
     _to_serializable,
@@ -50,26 +51,6 @@ def serialize_queryset(queryset):
     if len(queryset) == 0:
         return []
     return [instance.to_dict() for instance in queryset]
-
-
-def serialize_user_interaction(user_interaction, include_logs=False):
-    """
-    Custom serializer for UserInteraction instances.
-    Optionally includes related InteractionLog entries.
-    """
-    data = model_to_dict(user_interaction, exclude=["id", "workflow"])
-    data["id"] = str(user_interaction.id)
-    data["session_id"] = str(user_interaction.session_id) if user_interaction.session_id else None
-    data["workflow"] = (
-        {"id": str(user_interaction.workflow.id), "name": user_interaction.workflow.name}
-        if user_interaction.workflow
-        else None
-    )
-
-    data["input_data"] = user_interaction.input_data
-    data["llm_output"] = user_interaction.llm_output
-
-    return data
 
 
 class PromptListCreateView(JSONResponseMixin, ModelListMixin, ModelCreateMixin, View):
@@ -258,10 +239,13 @@ class WorkflowListCreateView(JSONResponseMixin, ModelListMixin, ModelCreateMixin
     def post(self, request, *args, **kwargs):
         request_data = request.json_body
         try:
-            name = request_data.get("name")
-            description = request_data.get("description", "")
-            workflow_definition = request_data.get("workflow_definition")
-            activate = request_data.get("activate", False)
+            name = request_data.pop("name")
+            description = request_data.pop("description", "")
+            workflow_definition = request_data.pop("workflow_definition")
+            prompt_id = request_data.pop("prompt")
+            activate = request_data.pop("activate", False)
+
+            prompt_instance = Prompt.objects.get(id=prompt_id)
 
             if not name or not workflow_definition:
                 return self.json_error_response(
@@ -272,6 +256,7 @@ class WorkflowListCreateView(JSONResponseMixin, ModelListMixin, ModelCreateMixin
                 workflow = Workflow(
                     name=name,
                     description=description,
+                    prompt=prompt_instance,
                     workflow_definition=workflow_definition,
                     is_active=activate,
                 )
@@ -317,6 +302,8 @@ class WorkflowDetailView(
 
         request_data = request.json_body
         try:
+            prompt_instance = Prompt.objects.get(id=request_data.get("prompt", None))
+            workflow.prompt = prompt_instance
             workflow.description = request_data.get("description", workflow.description)
             workflow.workflow_definition = request_data.get(
                 "workflow_definition", workflow.workflow_definition
@@ -388,67 +375,13 @@ class WorkflowActivateDeactivateView(
         return super().post(request, pk, action, *args, **kwargs)
 
 
-class UserInteractionListView(JSONResponseMixin, ModelListMixin, View):
-    model_class = UserInteraction
-    serializer_method = serialize_user_interaction
-
-    def get(self, request, *args, **kwargs):
-        interactions = self.get_queryset(request).select_related("workflow")
-        interactions = self.apply_list_filters(interactions, request)
-        data = [self.serializer_method(ui) for ui in interactions]
-        return self.render_json_response(data, safe=False)
-
-    def apply_list_filters(self, queryset, request):
-        workflow_id = request.GET.get("workflow_id")
-        workflow_name = request.GET.get("workflow_name")
-        user_identifier = request.GET.get("user_identifier")
-        session_id = request.GET.get("session_id")
-        status = request.GET.get("status")
-
-        if workflow_id:
-            try:
-                queryset = queryset.filter(workflow__id=uuid.UUID(workflow_id))
-            except ValueError:
-                raise ValidationError("Invalid workflow_id format.")
-
-        if workflow_name:
-            queryset = queryset.filter(workflow__name__iexact=workflow_name)
-
-        if user_identifier:
-            queryset = queryset.filter(user_identifier__iexact=user_identifier)
-
-        if session_id:
-            try:
-                queryset = queryset.filter(session_id=uuid.UUID(session_id))
-            except ValueError:
-                raise ValidationError("Invalid session_id format.")
-
-        if status:
-            queryset = queryset.filter(status__iexact=status)
-
-        return queryset
-
-
-class UserInteractionDetailView(JSONResponseMixin, ModelRetrieveMixin, View):
-    model_class = UserInteraction
-    serializer_method = serialize_user_interaction
-
-    def get(self, request, pk, *args, **kwargs):
-        user_interaction = self.get_object(pk)
-        if user_interaction is None:
-            return self.json_error_response("User Interaction not found.", status=404)
-
-        data = self.serializer_method(user_interaction, include_logs=True)
-        return self.render_json_response(data)
-
-
 class ExecuteWorkflowView(JSONResponseMixin, View):
     def post(self, request, name, *args, **kwargs):
         try:
             request_data = request.json_body
-            input_data = request_data.get("input", {})
-            execution_method = request_data.get("execution_method", "INVOKE")
-            execution_config = request_data.get("execution_config", {})
+            input_data = request_data.pop("input", {})
+            execution_method = request_data.pop("execution_method", "INVOKE")
+            execution_config = request_data.pop("execution_config", {})
 
             if not isinstance(input_data, dict):
                 raise ValidationError("Input data must be a JSON object.")
@@ -457,13 +390,31 @@ class ExecuteWorkflowView(JSONResponseMixin, View):
 
             global_llm_config = getattr(settings, "DJANGO_LLM_SETTINGS", {})
 
-            workflow_chain = workflow_record.to_langchain_chain(
-                llm_config=global_llm_config, log="true"
-            )
-
-            response = _execute_and_log_workflow_step(
-                workflow_chain, input_data, execution_method, execution_config
-            )
+            # This leads to use of chat history
+            if request_data.get("session_id"):
+                session_id = request_data.pop("session_id")
+                history = request_data.pop("history")
+                execution_config["configurable"] = {"session_id": session_id}
+                workflow_chain = workflow_record.to_langchain_chain(
+                    llm_config=global_llm_config,
+                    log="true",
+                    session_id=session_id,
+                    input=input_data,
+                    history=history,
+                )
+                response = _execute_and_log_workflow_step(
+                    workflow_chain=workflow_chain,
+                    current_input=input_data,
+                    execution_method=execution_method,
+                    execution_config=execution_config,
+                )
+            else:
+                workflow_chain = workflow_record.to_langchain_chain(
+                    llm_config=global_llm_config, log="true"
+                )
+                response = _execute_and_log_workflow_step(
+                    workflow_chain, input_data, execution_method, execution_config
+                )
 
         except ObjectDoesNotExist:
             overall_error_message = f"No active workflow found with name: {name}"
@@ -473,10 +424,8 @@ class ExecuteWorkflowView(JSONResponseMixin, View):
             return self.json_error_response(overall_error_message, status=400)
         except ValidationError as e:
             return self.json_error_response(str(e), status=400)
-        except Exception as e:
-            overall_error_message = f"An unexpected error occurred: {str(e)}"
-            return self.json_error_response(overall_error_message, status=500)
-
+        except PromptValidationError as e:
+            return self.json_error_response(e, status=500)
         return self.render_json_response(
             {
                 "workflow_name": workflow_record.name,
