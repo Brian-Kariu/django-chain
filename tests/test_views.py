@@ -9,7 +9,7 @@ import pytest
 from model_bakery import baker
 from faker import Faker
 
-from django_chain.models import InteractionLog, Prompt, Workflow, UserInteraction
+from django_chain.models import InteractionLog, Prompt, Workflow
 from django_chain.views import (
     InteractionLogDetailView,
     InteractionLogListCreateView,
@@ -19,13 +19,10 @@ from django_chain.views import (
     WorkflowListCreateView,
     WorkflowDetailView,
     WorkflowActivateDeactivateView,
-    UserInteractionListView,
-    UserInteractionDetailView,
     ExecuteWorkflowView,
     chat_view,
     vector_search_view,
     serialize_queryset,
-    serialize_user_interaction,
 )
 
 fake = Faker()
@@ -86,28 +83,6 @@ def sample_workflow():
 @pytest.fixture
 def sample_interactionlog():
     return baker.make(InteractionLog)
-
-
-@pytest.fixture
-def sample_user_interaction():
-    workflow = baker.make(
-        Workflow,
-        name=fake.name(),
-        workflow_definition=[
-            {"type": "prompt", "name": "SimpleGreetingPrompt"},
-            {"type": "llm", "config": {"temperature": 0.5}},
-            {"type": "parser", "parser_type": "StrOutputParser"},
-        ],
-    )
-    return baker.make(
-        UserInteraction,
-        workflow=workflow,
-        session_id=uuid.uuid4(),
-        user_identifier=fake.email(),
-        input_data={"input": "test"},
-        llm_output={"output": "response"},
-        status="completed",
-    )
 
 
 class TestPromptListCreateView:
@@ -533,87 +508,6 @@ class TestInteractionLogListCreateView:
         assert len(data) >= 1
 
 
-@pytest.mark.skip()
-class TestUserInteractionListView:
-    @pytest.mark.django_db
-    def test_get_list_user_interactions_success(self, request_factory, sample_user_interaction):
-        request = request_factory.get("/interactions/")
-        request.json_body = {}
-
-        view = UserInteractionListView()
-        response = view.get(request)
-
-        assert response.status_code == 200
-        data = json.loads(response.content)
-        assert len(data) >= 1
-
-    @pytest.mark.django_db
-    @pytest.mark.parametrize(
-        "filter_param,filter_value",
-        [
-            ("workflow_name", "test_workflow"),
-            ("user_identifier", "test@example.com"),
-            ("status", "completed"),
-        ],
-    )
-    def test_get_list_user_interactions_filters(
-        self, request_factory, sample_user_interaction, filter_param, filter_value
-    ):
-        if filter_param == "workflow_name":
-            sample_user_interaction.workflow.name = filter_value
-            sample_user_interaction.workflow.save()
-        elif filter_param == "user_identifier":
-            sample_user_interaction.user_identifier = filter_value
-            sample_user_interaction.save()
-        elif filter_param == "status":
-            sample_user_interaction.status = filter_value
-            sample_user_interaction.save()
-
-        request = request_factory.get(f"/interactions/?{filter_param}={filter_value}")
-        request.json_body = {}
-
-        view = UserInteractionListView()
-        response = view.get(request)
-
-        assert response.status_code == 200
-        data = json.loads(response.content)
-        assert len(data) >= 1
-
-    @pytest.mark.django_db
-    def test_get_list_user_interactions_invalid_uuid_filter(self, request_factory):
-        request = request_factory.get("/interactions/?workflow_id=invalid-uuid")
-        request.json_body = {}
-
-        view = UserInteractionListView()
-
-        with pytest.raises(ValidationError):
-            view.get(request)
-
-
-@pytest.mark.skip()
-class TestUserInteractionDetailView:
-    @pytest.mark.django_db
-    def test_get_user_interaction_success(self, request_factory, sample_user_interaction):
-        request = request_factory.get(f"/interactions/{sample_user_interaction.id}/")
-
-        view = UserInteractionDetailView()
-        response = view.get(request, pk=str(sample_user_interaction.id))
-
-        assert response.status_code == 200
-        data = json.loads(response.content)
-        assert data["user_identifier"] == sample_user_interaction.user_identifier
-
-    @pytest.mark.django_db
-    def test_get_user_interaction_not_found(self, request_factory):
-        non_existent_id = str(uuid.uuid4())
-        request = request_factory.get(f"/interactions/{non_existent_id}/")
-
-        view = UserInteractionDetailView()
-        response = view.get(request, pk=non_existent_id)
-
-        assert response.status_code == 404
-
-
 @pytest.mark.django_db
 class TestExecuteWorkflowView(TestCase):
     def setUp(self):
@@ -941,14 +835,6 @@ class TestUtilityFunctions:
             result = serialize_queryset(queryset)
             assert len(result) == 1
             assert result[0]["name"] == "test"
-
-    @pytest.mark.django_db
-    def test_serialize_user_interaction_without_logs(self, sample_user_interaction):
-        result = serialize_user_interaction(sample_user_interaction)
-
-        assert result["id"] == str(sample_user_interaction.id)
-        assert result["user_identifier"] == sample_user_interaction.user_identifier
-        assert "interaction_logs" not in result
 
 
 # Integration tests
