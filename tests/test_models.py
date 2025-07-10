@@ -7,7 +7,6 @@ from django_chain.models import (
     Workflow,
     ChatSession,
     ChatMessage,
-    UserInteraction,
     InteractionLog,
 )
 
@@ -98,45 +97,6 @@ class TestChatMessage:
         session = baker.make(ChatSession)
         message = baker.make(ChatMessage, session=session, content="Hello world", role="USER")
         assert "Hello" in str(message)
-
-
-@pytest.mark.django_db
-class TestUserInteraction:
-    def test_manager_methods(self):
-        workflow = baker.make(
-            Workflow,
-            name="test_workflow",
-            workflow_definition=[
-                {"type": "prompt", "name": "SimpleGreetingPrompt"},
-                {"type": "llm", "config": {"temperature": 0.4}},
-                {"type": "parser", "parser_type": "StrOutputParser"},
-            ],
-        )
-        interaction = UserInteraction.objects.create_for_workflow(
-            workflow=workflow,
-            input_data={"q": "What is AI?"},
-            user_identifier="user123",
-            session_id="d849cf3c-1d15-4791-b9d8-41e52cd940e4",
-        )
-        assert interaction.status == "processing"
-        assert UserInteraction.objects.completed_interactions().count() == 0
-
-        interaction.status = "success"
-        interaction.save()
-
-        assert UserInteraction.objects.completed_interactions().count() == 1
-
-    def test_update_status_and_metrics(self):
-        interaction = baker.make(UserInteraction)
-        interaction.update_status_and_metrics(
-            status="failure",
-            llm_output={"message": "error"},
-            total_cost_estimate=0.01,
-            total_duration_ms=1500,
-            error_message="Timeout",
-        )
-        assert interaction.status == "failure"
-        assert interaction.error_message == "Timeout"
 
 
 @pytest.mark.django_db

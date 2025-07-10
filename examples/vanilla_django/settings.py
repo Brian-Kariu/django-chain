@@ -112,10 +112,7 @@ DJANGO_LLM_SETTINGS = {
     },
     "ENABLE_LLM_LOGGING": True,
     "LLM_LOGGING_LEVEL": "DEBUG",
-    "MEMORY": {
-        "DEFAULT_TYPE": "buffer",
-        "WINDOW_SIZE": 5,
-    },
+    "MEMORY": {"STORE": "INMEMORY"},
     "CHAIN": {
         "DEFAULT_OUTPUT_PARSER": "str",
         "ENABLE_MEMORY": True,

@@ -38,12 +38,6 @@ urlpatterns = [
     ),
     path("logs/", views.InteractionLogListCreateView.as_view(), name="log-list-create"),
     path("logs/<uuid:pk>/", views.InteractionLogDetailView.as_view(), name="logs-detail"),
-    path("interactions/", views.UserInteractionListView.as_view(), name="user-interaction-list"),
-    path(
-        "interactions/<uuid:pk>/",
-        views.UserInteractionDetailView.as_view(),
-        name="user-interaction-detail",
-    ),
     path("chat/", views.chat_view, name="chat-view"),
     path("vector-search/", views.vector_search_view, name="vector-search-view"),
 ]
