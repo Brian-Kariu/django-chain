@@ -1,15 +1,15 @@
 """
-PGVector integration for django-chain.
+PGVector provider integration for django-chain.
 """
 
 from django.db import connections
 from langchain_community.vectorstores.pgvector import PGVector
-from langchain_core.embeddings import BaseEmbeddings
+from langchain_core.embeddings import Embeddings
 from langchain_core.vectorstores import VectorStore
 
 
 def get_pgvector_store(
-    embedding_function: BaseEmbeddings,
+    embedding_function: Embeddings,
     collection_name: str = "langchain_documents",
     db_alias: str = "default",
     **kwargs,
@@ -31,11 +31,9 @@ def get_pgvector_store(
     """
     db_settings = connections[db_alias].settings_dict
 
-    # Verify we're using PostgreSQL
     if not db_settings.get("ENGINE", "").endswith("postgresql"):
         raise ValueError("PGVector requires a PostgreSQL database")
 
-    # Construct connection string
     connection_string = PGVector.connection_string_from_db_params(
         driver="psycopg2",
         host=db_settings.get("HOST", "localhost"),

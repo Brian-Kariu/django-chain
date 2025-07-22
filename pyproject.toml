@@ -32,7 +32,6 @@ dependencies = [
     "langchain>=0.1.0",
     "langchain-core>=0.1.0",
     "langchain-community>=0.1.0",
-    "python-decouple>=3.8",
     "psycopg2-binary>=2.9.0",
 ]
 
@@ -74,6 +73,7 @@ dev = [
     "mypy>=1.5.1",
     "model_bakery>=1.20.5",
     "commitizen",
+    "pytest-html"
 ]
 docs = [
     "mkdocs==1.6.1",
@@ -172,6 +172,7 @@ ignore = [
     "BLE",  # flake8-blind-except
     "SLF",  # flake8-self
     "E402",  # module level import not at top of file
+    "PERF", # perflint (performance anti-patterns)
 ]
 
 [tool.ruff.lint.isort]
@@ -197,9 +198,7 @@ skip-magic-trailing-comma = false
 "django_chain/models/*.py" = ["ALL"]
 "django_chain/services/*.py" = ["ALL"]
 "django_chain/llm_integrations/*.py" = ["ALL"]
-"django_chain/vector_db_integrations/*.py" = ["ALL"]
 "django_chain/management/commands/*.py" = ["ALL"]
-"django_chain/memory.py" = ["ALL"]
 
 [tool.mypy]
 python_version = "3.9"
@@ -237,12 +236,20 @@ ignore_errors = true
 
 [tool.pytest.ini_options]
 DJANGO_SETTINGS_MODULE = "examples.vanilla_django.settings"
-python_files = ["test_*.py", "*_test.py"]
-addopts = "-v --cov=django_chain --cov-report=term-missing"
 testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py"]
+addopts = "-v --cov=django_chain --cov-report=term-missing --strict-markers --disable-warnings --tb=short --reuse-db --nomigrations"
 filterwarnings = [
     "ignore::DeprecationWarning",
-    "ignore::django.utils.deprecation.RemovedInDjango50Warning",
+    "ignore::PendingDeprecationWarning",
+]
+markers = [
+    "slow: marks tests as slow (deselect with '-m not slow')",
+    "performance: marks tests as performance benchmarks",
+    "integration: marks tests as integration tests",
+    "unit: marks tests as unit tests",
+    "vanilla_django: marks tests specific to vanilla Django project",
+    "skip: marks tests to skip"
 ]
 
 [tool.coverage.run]
@@ -261,6 +268,7 @@ omit = [
     "*.egg-info/*",
     "build/*",
     "dist/*",
+    "*/migrations/*.py",
 ]
 
 [tool.coverage.report]

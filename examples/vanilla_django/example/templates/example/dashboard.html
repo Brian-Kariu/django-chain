@@ -1,0 +1,341 @@
+{% extends 'example/base.html' %}
+
+{% block title %}Dashboard - Django-Chain Examples{% endblock %}
+
+{% block content %}
+<div id="alerts"></div>
+
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pb-2 mb-3 border-bottom">
+    <h1 class="h2">
+        <i class="fas fa-tachometer-alt me-2"></i>Django-Chain Dashboard
+    </h1>
+    <div class="btn-toolbar mb-2 mb-md-0">
+        <div class="btn-group me-2">
+            <a href="{% url 'example:api_overview' %}" class="btn btn-sm btn-outline-secondary">
+                <i class="fas fa-code me-1"></i>API Docs
+            </a>
+        </div>
+    </div>
+</div>
+
+<!-- Welcome Section -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-info-circle me-2"></i>Welcome to Django-Chain Examples
+                </h5>
+            </div>
+            <div class="card-body">
+                <p class="card-text">
+                    This comprehensive example project demonstrates all major features of <strong>django-chain</strong>,
+                    a Django library for seamless LLM integration. Explore the features below to see how you can
+                    integrate LLM capabilities into your Django applications.
+                </p>
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6><i class="fas fa-star text-warning me-2"></i>Key Features Demonstrated:</h6>
+                        <ul class="list-unstyled ms-3">
+                            <li><i class="fas fa-check text-success me-2"></i>Prompt Management & Templates</li>
+                            <li><i class="fas fa-check text-success me-2"></i>Workflow Creation & Execution</li>
+                            <li><i class="fas fa-check text-success me-2"></i>Chat Session Management</li>
+                            <li><i class="fas fa-check text-success me-2"></i>Vector Store Operations</li>
+                        </ul>
+                    </div>
+                    <div class="col-md-6">
+                        <h6><i class="fas fa-cogs text-primary me-2"></i>Advanced Features:</h6>
+                        <ul class="list-unstyled ms-3">
+                            <li><i class="fas fa-check text-success me-2"></i>LLM Provider Testing</li>
+                            <li><i class="fas fa-check text-success me-2"></i>Interaction Logging & Analytics</li>
+                            <li><i class="fas fa-check text-success me-2"></i>Error Handling Patterns</li>
+                            <li><i class="fas fa-check text-success me-2"></i>Custom Workflow Building</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Statistics Cards -->
+<div class="row mb-4">
+    <div class="col-xl-3 col-md-6">
+        <div class="card bg-primary text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <div class="card-title h6">Total Prompts</div>
+                        <div class="h3">{{ total_prompts }}</div>
+                    </div>
+                    <div class="align-self-center">
+                        <i class="fas fa-comments fa-2x opacity-75"></i>
+                    </div>
+                </div>
+            </div>
+            <div class="card-footer">
+                <a href="{% url 'example:prompt_examples' %}" class="text-white text-decoration-none">
+                    <small>View Prompts <i class="fas fa-arrow-right"></i></small>
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-xl-3 col-md-6">
+        <div class="card bg-success text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <div class="card-title h6">Total Workflows</div>
+                        <div class="h3">{{ total_workflows }}</div>
+                    </div>
+                    <div class="align-self-center">
+                        <i class="fas fa-project-diagram fa-2x opacity-75"></i>
+                    </div>
+                </div>
+            </div>
+            <div class="card-footer">
+                <a href="{% url 'example:workflow_examples' %}" class="text-white text-decoration-none">
+                    <small>View Workflows <i class="fas fa-arrow-right"></i></small>
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-xl-3 col-md-6">
+        <div class="card bg-info text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <div class="card-title h6">Chat Sessions</div>
+                        <div class="h3">{{ total_chat_sessions }}</div>
+                    </div>
+                    <div class="align-self-center">
+                        <i class="fas fa-comment-dots fa-2x opacity-75"></i>
+                    </div>
+                </div>
+            </div>
+            <div class="card-footer">
+                <a href="{% url 'example:chat_demo' %}" class="text-white text-decoration-none">
+                    <small>Try Chat Demo <i class="fas fa-arrow-right"></i></small>
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-xl-3 col-md-6">
+        <div class="card bg-warning text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <div class="card-title h6">Interactions Logged</div>
+                        <div class="h3">{{ total_interactions }}</div>
+                    </div>
+                    <div class="align-self-center">
+                        <i class="fas fa-list-alt fa-2x opacity-75"></i>
+                    </div>
+                </div>
+            </div>
+            <div class="card-footer">
+                <a href="{% url 'example:interaction_logs' %}" class="text-white text-decoration-none">
+                    <small>View Logs <i class="fas fa-arrow-right"></i></small>
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Current Configuration -->
+<div class="row mb-4">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-cog me-2"></i>Current Configuration
+                </h5>
+            </div>
+            <div class="card-body">
+                <table class="table table-sm">
+                    <tr>
+                        <td><strong>LLM Provider:</strong></td>
+                        <td>
+                            <span class="badge bg-secondary">{{ app_settings.provider }}</span>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td><strong>Default Model:</strong></td>
+                        <td>{{ app_settings.model }}</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Logging Enabled:</strong></td>
+                        <td>
+                            {% if app_settings.logging_enabled %}
+                                <span class="badge bg-success">Yes</span>
+                            {% else %}
+                                <span class="badge bg-danger">No</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                </table>
+                <a href="{% url 'example:llm_test' %}" class="btn btn-sm btn-outline-primary">
+                    <i class="fas fa-cogs me-1"></i>Test Configuration
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-rocket me-2"></i>Quick Actions
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="d-grid gap-2">
+                    <button class="btn btn-primary" onclick="createExamplePrompt()">
+                        <i class="fas fa-plus me-2"></i>Create Example Prompt
+                    </button>
+                    <button class="btn btn-success" onclick="createExampleWorkflow()">
+                        <i class="fas fa-plus me-2"></i>Create Example Workflow
+                    </button>
+                    <a href="{% url 'example:chat_demo' %}" class="btn btn-info">
+                        <i class="fas fa-comment me-2"></i>Start Chat Session
+                    </a>
+                    <button class="btn btn-warning" onclick="testLLMConnection()">
+                        <i class="fas fa-plug me-2"></i>Test LLM Connection
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Feature Cards -->
+<div class="row">
+    <div class="col-lg-4 mb-4">
+        <div class="card h-100">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-comments me-2"></i>Prompt Management
+                </h5>
+            </div>
+            <div class="card-body">
+                <p class="card-text">
+                    Create, manage, and version prompt templates. Supports both simple prompts and
+                    complex chat prompt templates with system messages.
+                </p>
+                <ul class="list-unstyled">
+                    <li><i class="fas fa-check text-success me-2"></i>Template versioning</li>
+                    <li><i class="fas fa-check text-success me-2"></i>Variable validation</li>
+                    <li><i class="fas fa-check text-success me-2"></i>LangChain integration</li>
+                </ul>
+            </div>
+            <div class="card-footer">
+                <a href="{% url 'example:prompt_examples' %}" class="btn btn-primary btn-sm">
+                    Explore Prompts
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-4 mb-4">
+        <div class="card h-100">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-project-diagram me-2"></i>Workflow Orchestration
+                </h5>
+            </div>
+            <div class="card-body">
+                <p class="card-text">
+                    Build complex AI workflows by chaining prompts, LLMs, and parsers.
+                    Execute workflows with comprehensive logging and error handling.
+                </p>
+                <ul class="list-unstyled">
+                    <li><i class="fas fa-check text-success me-2"></i>Chain composition</li>
+                    <li><i class="fas fa-check text-success me-2"></i>Execution logging</li>
+                    <li><i class="fas fa-check text-success me-2"></i>Error recovery</li>
+                </ul>
+            </div>
+            <div class="card-footer">
+                <a href="{% url 'example:workflow_examples' %}" class="btn btn-success btn-sm">
+                    Build Workflows
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-4 mb-4">
+        <div class="card h-100">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-comment-dots me-2"></i>Chat Management
+                </h5>
+            </div>
+            <div class="card-body">
+                <p class="card-text">
+                    Manage chat sessions with persistent history, user tracking, and
+                    analytics. Perfect for building conversational AI applications.
+                </p>
+                <ul class="list-unstyled">
+                    <li><i class="fas fa-check text-success me-2"></i>Session persistence</li>
+                    <li><i class="fas fa-check text-success me-2"></i>Message history</li>
+                    <li><i class="fas fa-check text-success me-2"></i>User association</li>
+                </ul>
+            </div>
+            <div class="card-footer">
+                <a href="{% url 'example:chat_demo' %}" class="btn btn-info btn-sm">
+                    Try Chat Demo
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function createExamplePrompt() {
+    const data = {
+        example_type: 'simple'
+    };
+
+    makeApiCall('{% url "example:prompt_examples" %}', 'POST', data)
+        .done(function(response) {
+            showAlert(`✅ Created prompt: ${response.name}`, 'success');
+            setTimeout(() => {
+                location.reload();
+            }, 1000);
+        });
+}
+
+function createExampleWorkflow() {
+    const data = {
+        workflow_type: 'simple',
+        description: 'Example workflow created from dashboard'
+    };
+
+    makeApiCall('{% url "example:workflow_examples" %}', 'POST', data)
+        .done(function(response) {
+            showAlert(`✅ Created workflow: ${response.name}`, 'success');
+            setTimeout(() => {
+                location.reload();
+            }, 1000);
+        });
+}
+
+function testLLMConnection() {
+    const data = {
+        test_type: 'chat',
+        message: 'Hello! This is a connection test.'
+    };
+
+    showAlert('Testing LLM connection...', 'info');
+
+    makeApiCall('{% url "example:llm_test" %}', 'POST', data)
+        .done(function(response) {
+            showAlert(`✅ LLM Connection successful! Response: "${response.response.substring(0, 100)}..."`, 'success');
+        });
+}
+</script>
+{% endblock %}

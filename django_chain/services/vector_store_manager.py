@@ -5,15 +5,10 @@ Vector store manager service for django-chain.
 import logging
 from typing import Any, Optional
 
-from django.conf import settings
-
+from django_chain.config import app_settings
 from django_chain.exceptions import MissingDependencyError, VectorStoreError
-from django_chain.services.llm_client import LLMClient
-from django_chain.vector_db_integrations import (
-    add_documents,
-    get_vector_store,
-    retrieve_documents,
-)
+from django_chain.utils.llm_client import create_llm_embedding_client
+from django_chain.providers import get_vector_store
 
 logger = logging.getLogger(__name__)
 
@@ -40,22 +35,22 @@ class VectorStoreManager:
             VectorStoreError: If store configuration is invalid
         """
         try:
-            vector_store_settings = settings.DJANGO_LLM_SETTINGS.get("VECTOR_STORE", {})
+            vector_store_settings = app_settings.VECTOR_STORE
             store_type = store_type or vector_store_settings.get("TYPE", "pgvector")
 
             cache_key = f"{store_type}:{kwargs.get('collection_name', 'default')}"
             if cache_key in cls._instances:
                 return cls._instances[cache_key]
 
-            # Get embedding function
-            embedding_function = LLMClient.get_embedding_model()
+            embed_config = app_settings.DEFAULT_EMBEDDING_MODEL
+            provider = embed_config.get("provider", "fake")
+            embedding_function = create_llm_embedding_client(provider)
 
-            # Get store configuration
             store_config = {
                 "embedding_function": embedding_function,
                 "collection_name": kwargs.get("collection_name")
                 or vector_store_settings.get("PGVECTOR_COLLECTION_NAME", "langchain_documents"),
-                **kwargs,
+                **{k: v for k, v in kwargs.items() if k != "collection_name"},
             }
 
             store = get_vector_store(store_type=store_type, **store_config)
@@ -77,63 +72,74 @@ class VectorStoreManager:
             ) from e
 
     @classmethod
-    def add_documents(
+    def add_documents_to_store(
         cls,
-        texts: list[str],
-        metadatas: Optional[list[dict[str, Any]]] = None,
+        documents: list,
         store_type: Optional[str] = None,
+        collection_name: Optional[str] = None,
         **kwargs,
-    ) -> None:
+    ) -> Any:
         """
-        Add documents to the vector store.
+        Add documents to a vector store.
 
         Args:
-            texts: List of text documents to add
-            metadatas: Optional list of metadata dictionaries
+            documents: List of documents to add
             store_type: Optional store type override
-            **kwargs: Additional arguments for the vector store
-
-        Raises:
-            VectorStoreError: If document addition fails
-        """
-        try:
-            if not texts:
-                raise ValueError("No texts provided to add to vector store")
-
-            store = cls.get_vector_store(store_type=store_type, **kwargs)
-            add_documents(store=store, texts=texts, metadatas=metadatas)
-            logger.info(f"Successfully added {len(texts)} documents to vector store")
-        except Exception as e:
-            logger.error(f"Error adding documents to vector store: {e}", exc_info=True)
-            raise VectorStoreError(f"Failed to add documents to vector store: {e!s}") from e
-
-    @classmethod
-    def retrieve_documents(
-        cls, query: str, k: int = 4, store_type: Optional[str] = None, **kwargs
-    ) -> list[dict[str, Any]]:
-        """
-        Retrieve documents from the vector store.
-
-        Args:
-            query: The search query
-            k: Number of documents to retrieve
-            store_type: Optional store type override
-            **kwargs: Additional arguments for the vector store
+            collection_name: Optional collection name override
+            **kwargs: Additional arguments
 
         Returns:
-            List of retrieved documents with their metadata
+            Result of the add operation
 
         Raises:
-            VectorStoreError: If document retrieval fails
+            VectorStoreError: If adding documents fails
         """
         try:
-            if not query:
-                raise ValueError("No query provided for document retrieval")
-
-            store = cls.get_vector_store(store_type=store_type, **kwargs)
-            results = retrieve_documents(store=store, query=query, k=k)
-            logger.info(f"Successfully retrieved {len(results)} documents from vector store")
-            return results
+            store = cls.get_vector_store(
+                store_type=store_type, collection_name=collection_name, **kwargs
+            )
+            return store.add_texts(texts=documents)
         except Exception as e:
-            logger.error(f"Error retrieving documents from vector store: {e}", exc_info=True)
-            raise VectorStoreError(f"Failed to retrieve documents from vector store: {e!s}") from e
+            logger.error(f"Error adding documents to vector store: {e}", exc_info=True)
+            raise VectorStoreError(f"Failed to add documents: {e}") from e
+
+    @classmethod
+    def search_documents(
+        cls,
+        query: str,
+        store_type: Optional[str] = None,
+        collection_name: Optional[str] = None,
+        k: int = 5,
+        **kwargs,
+    ) -> list:
+        """
+        Search for similar documents in the vector store.
+
+        Args:
+            query: Search query
+            store_type: Optional store type override
+            collection_name: Optional collection name override
+            k: Number of results to return
+            **kwargs: Additional arguments
+
+        Returns:
+            List of similar documents
+
+        Raises:
+            VectorStoreError: If search fails
+        """
+        try:
+            store = cls.get_vector_store(
+                store_type=store_type, collection_name=collection_name, **kwargs
+            )
+            # Use vector store method directly
+            return store.similarity_search(query=query, k=k)
+        except Exception as e:
+            logger.error(f"Error searching vector store: {e}", exc_info=True)
+            raise VectorStoreError(f"Failed to search documents: {e}") from e
+
+    @classmethod
+    def clear_cache(cls) -> None:
+        """Clear the vector store instance cache."""
+        cls._instances.clear()
+        logger.info("Vector store cache cleared")

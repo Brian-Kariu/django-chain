@@ -2,12 +2,18 @@ from operator import add
 
 from django_chain.exceptions import PromptValidationError
 from django_chain.exceptions import WorkflowValidationError
+from django_chain.utils.langchain import LangchainChainTypes
 from django_chain.utils.langchain import LangchainPromptChoices
-from django_chain.utils.workflows import LangchainChainTypes
-from django_chain.utils.workflows import ParserTypes
+from django_chain.utils.langchain import ParserTypes
 
 
 def validate_prompt(prompt_data):
+    if not isinstance(prompt_data, dict):
+        raise PromptValidationError(
+            prompt_data,
+            message="The prompt data needs to be a valid dictionary. ",
+            expected_format="a dict",
+        )
     prompt_types_to_expected_data_map = {
         LangchainPromptChoices.PromptTemplate.name: [
             "template",
@@ -23,9 +29,10 @@ def validate_prompt(prompt_data):
             value=template_type, expected_format="a string", additional_message=msg
         )
     if template_type not in [choice[1] for choice in LangchainPromptChoices.choices]:
-        msg = f"Supplied langchain prompt type {template_type} is not one of the supported types, {
-            ' '.join([choice[1] for choice in LangchainPromptChoices.choices])
-        }"
+        msg = (
+            f"Supplied langchain prompt type {template_type} is not one of the supported types, "
+            f"{' '.join([choice[1] for choice in LangchainPromptChoices.choices])}"
+        )
         raise PromptValidationError(
             value=template_type, expected_format="a string", additional_message=msg
         )
@@ -70,11 +77,10 @@ def validate_workflow(workflow_definition):
             )
 
         if step.get("type") not in [choice[1] for choice in LangchainChainTypes.choices]:
-            msg = f"Supplied workflow definition type {
-                workflow_definition
-            } is not one of the supported types, {
-                ' '.join([choice[1] for choice in LangchainChainTypes.choices])
-            }"
+            msg = (
+                f"Supplied workflow definition type {workflow_definition} "
+                f"is not one of the supported types, {' '.join([choice[1] for choice in LangchainChainTypes.choices])}"
+            )
             raise WorkflowValidationError(value=workflow_definition, additional_message=msg)
 
         for arg in workflow_steps_to_expected_validation_map[step.get("type")]:
@@ -91,7 +97,8 @@ def validate_workflow(workflow_definition):
             if arg == "parser_type" and step.get(arg) not in [
                 choice[1] for choice in ParserTypes.choices
             ]:
-                msg = f"Supplied parser type {arg} is not one of the supported types, {
-                    ' '.join([choice[1] for choice in ParserTypes.choices])
-                }"
+                msg = (
+                    f"Supplied parser type {arg} is not one of the supported types, "
+                    f"{' '.join([choice[1] for choice in ParserTypes.choices])}"
+                )
                 raise WorkflowValidationError(value=step.get(arg), expected_format=msg)

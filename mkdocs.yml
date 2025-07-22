@@ -73,17 +73,28 @@ markdown_extensions:
 
 nav:
   - Home: index.md
-  - Introduction:
+  - Getting Started:
     - Design & Architecture: introduction/design.md
     - Installation Guide: introduction/installation.md
-  - Usage:
+    - Configuration: introduction/configuration.md
+  - Usage & Examples:
     - Tutorials: usage/tutorials.md
     - How-to Guides: usage/how-to-guides.md
+    - Code Examples: usage/examples.md
+    - Testing Guide: usage/testing.md
   - API Reference:
     - Overview: api/intro.md
     - Models: api/models.md
     - Views: api/views.md
-    - Mixins: api/mixins.md
-    - Providers: api/providers.md
     - Utilities: api/utilities.md
-  - Contributing: contributing/README.md
+    - Providers: api/providers.md
+    - Mixins: api/mixins.md
+  - Advanced Topics:
+    - Custom Providers: advanced/custom-providers.md
+    - Vector Stores: advanced/vector-stores.md
+    - Performance: advanced/performance.md
+    - Security: advanced/security.md
+  - Development:
+    - Contributing: contributing/README.md
+    - Testing Strategy: contributing/testing.md
+    - Release Process: contributing/releases.md

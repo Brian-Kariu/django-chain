@@ -14,27 +14,25 @@ import json
 import uuid
 from typing import Any
 
-from django.conf import settings
+from django.core.exceptions import ValidationError, ObjectDoesNotExist
+from django.db import transaction, models
 from django.forms import model_to_dict
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 from django.views import View
+from django.utils import timezone
 
+from django_chain.config import app_settings
 from django_chain.exceptions import PromptValidationError
-from django_chain.models import InteractionLog, Prompt
-
-from .services.llm_client import LLMClient
-from .services.vector_store_manager import VectorStoreManager
-
-from django.core.exceptions import ValidationError, ObjectDoesNotExist
-from django.db import transaction, models
-
-from django_chain.models import Prompt, Workflow
+from django_chain.models import InteractionLog, Prompt, Workflow, ChatSession, ChatHistory
 from django_chain.utils.llm_client import (
     _execute_and_log_workflow_step,
     _to_serializable,
+    create_llm_chat_client,
 )
+
+from .services.vector_store_manager import VectorStoreManager
 
 from django_chain.mixins import (
     JSONResponseMixin,
@@ -215,9 +213,7 @@ class PromptDetailView(
             return self.json_error_response(str(e), status=500)
 
 
-class PromptActivateDeactivateView(
-    JSONResponseMixin, ModelRetrieveMixin, ModelActivateDeactivateMixin, View
-):
+class PromptActivateDeactivateView(ModelActivateDeactivateMixin, View):
     model_class = Prompt
     serializer_method = lambda view, p: p.to_dict()
 
@@ -268,7 +264,7 @@ class WorkflowListCreateView(JSONResponseMixin, ModelListMixin, ModelCreateMixin
             return self.render_json_response(self.serializer_method(workflow), status=201)
 
         except ValidationError as e:
-            return self.json_error_response(e.message_dict, status=400)
+            return self.json_error_response(str(e), status=400)
         except Exception as e:
             return self.json_error_response(str(e), status=500)
 
@@ -365,9 +361,7 @@ class InteractionLogDetailView(
             return self.json_error_response(str(e), status=500)
 
 
-class WorkflowActivateDeactivateView(
-    JSONResponseMixin, ModelRetrieveMixin, ModelActivateDeactivateMixin, View
-):
+class WorkflowActivateDeactivateView(ModelActivateDeactivateMixin, View):
     model_class = Workflow
     serializer_method = lambda view, w: w.to_dict()
 
@@ -376,63 +370,181 @@ class WorkflowActivateDeactivateView(
 
 
 class ExecuteWorkflowView(JSONResponseMixin, View):
+    """
+    Execute a workflow with optional chat session integration.
+
+    When session_id is provided, integrates with ChatSession and ChatHistory models
+    to maintain conversation context and log all interactions.
+    """
+
+    def get_or_create_chat_session(self, session_id, workflow, user=None):
+        """Get or create a chat session."""
+        if isinstance(session_id, str):
+            try:
+                session_id = uuid.UUID(session_id)
+            except ValueError:
+                session_id = uuid.uuid4()
+
+        try:
+            if user and hasattr(user, "is_authenticated") and user.is_authenticated:
+                session = ChatSession.objects.get(session_id=session_id, user=user)
+            else:
+                session = ChatSession.objects.get(session_id=session_id, user__isnull=True)
+        except ChatSession.DoesNotExist:
+            session_data = {
+                "session_id": session_id,
+                "workflow": workflow,
+                "title": f"Chat with {workflow.name}",
+                "is_active": True,
+            }
+            if user and hasattr(user, "is_authenticated") and user.is_authenticated:
+                session_data["user"] = user
+            session = ChatSession.objects.create(**session_data)
+
+        return session
+
+    def log_user_message(self, session, message_content):
+        """Log user message to chat history."""
+        last_message = session.messages.order_by("-order").first()
+        next_order = (last_message.order + 1) if last_message else 0
+
+        user_message = ChatHistory.objects.create(
+            session=session,
+            content=message_content,
+            role="USER",
+            order=next_order,
+        )
+        return user_message
+
+    def log_assistant_message(self, session, response_content, token_count=None):
+        """Log assistant response to chat history."""
+        last_message = session.messages.order_by("-order").first()
+        next_order = (last_message.order + 1) if last_message else 0
+
+        assistant_message = ChatHistory.objects.create(
+            session=session,
+            content=response_content,
+            role="ASSISTANT",
+            order=next_order,
+            token_count=token_count,
+        )
+        return assistant_message
+
     def post(self, request, name, *args, **kwargs):
         try:
-            request_data = request.json_body
-            input_data = request_data.pop("input", {})
-            execution_method = request_data.pop("execution_method", "INVOKE")
-            execution_config = request_data.pop("execution_config", {})
+            request_data = json.loads(request.body) if request.body else {}
+            input_data = request_data.get("input", {})
+            execution_method = request_data.get("execution_method", "invoke")
+            execution_config = request_data.get("execution_config", {})
+            session_id = request_data.get("session_id")
 
-            if not isinstance(input_data, dict):
-                raise ValidationError("Input data must be a JSON object.")
+            if session_id:
+                if isinstance(session_id, str):
+                    try:
+                        session_id = uuid.UUID(session_id)
+                    except ValueError:
+                        return self.json_error_response(
+                            f"Invalid session_id format: {session_id}. Must be a valid UUID.",
+                            status=400,
+                        )
 
-            workflow_record = Workflow.objects.get(name__iexact=name, is_active=True)
+            try:
+                workflow_record = Workflow.objects.get(name=name)
+            except Workflow.DoesNotExist:
+                return self.json_error_response(f"Workflow '{name}' not found", status=404)
 
-            global_llm_config = getattr(settings, "DJANGO_LLM_SETTINGS", {})
+            global_llm_config = getattr(app_settings, "DJANGO_LLM_SETTINGS", {})
 
-            # This leads to use of chat history
-            if request_data.get("session_id"):
-                session_id = request_data.pop("session_id")
-                history = request_data.pop("history")
-                execution_config["configurable"] = {"session_id": session_id}
+            if session_id:
+                user = getattr(request, "user", None)
+
+                authenticated_user = (
+                    user
+                    if (user and hasattr(user, "is_authenticated") and user.is_authenticated)
+                    else None
+                )
+
+                chat_session = self.get_or_create_chat_session(
+                    session_id, workflow_record, authenticated_user
+                )
+
+                message_content = (
+                    input_data.get("message") or input_data.get("input") or str(input_data)
+                )
+                if message_content and message_content != "{}":
+                    user_message = self.log_user_message(chat_session, message_content)
+
+                history = request_data.pop("history", "chat_history")
+                execution_config["configurable"] = {"session_id": str(session_id)}
                 workflow_chain = workflow_record.to_langchain_chain(
                     llm_config=global_llm_config,
                     log="true",
-                    session_id=session_id,
-                    input=input_data,
+                    session_id=str(session_id),
+                    chat_input=input_data.get("chat_input", "input"),
                     history=history,
+                    user=authenticated_user,
                 )
+
                 response = _execute_and_log_workflow_step(
                     workflow_chain=workflow_chain,
                     current_input=input_data,
                     execution_method=execution_method,
                     execution_config=execution_config,
                 )
+
+                response_content = str(response) if response else "No response"
+                assistant_message = self.log_assistant_message(
+                    chat_session,
+                    response_content,
+                    token_count=getattr(response, "usage", {}).get("total_tokens")
+                    if hasattr(response, "usage")
+                    else None,
+                )
+
+                chat_session.save()
+
+                response_data = {
+                    "workflow_name": workflow_record.name,
+                    "session_id": str(session_id),
+                    "input_received": input_data,
+                    "output": _to_serializable(response),
+                    "chat_session": {
+                        "id": chat_session.id,
+                        "title": chat_session.title,
+                        "message_count": chat_session.messages.filter(is_deleted=False).count(),
+                    },
+                    "messages": {
+                        "user_message_id": user_message.id if user_message else None,
+                        "assistant_message_id": assistant_message.id,
+                    },
+                }
+
+                return self.render_json_response(response_data)
+
             else:
                 workflow_chain = workflow_record.to_langchain_chain(
                     llm_config=global_llm_config, log="true"
                 )
+
                 response = _execute_and_log_workflow_step(
-                    workflow_chain, input_data, execution_method, execution_config
+                    workflow_chain=workflow_chain,
+                    current_input=input_data,
+                    execution_method=execution_method,
+                    execution_config=execution_config,
                 )
 
-        except ObjectDoesNotExist:
-            overall_error_message = f"No active workflow found with name: {name}"
-            return self.json_error_response(overall_error_message, status=404)
+                response_data = {
+                    "workflow_name": workflow_record.name,
+                    "input_received": input_data,
+                    "output": _to_serializable(response),
+                }
+
+                return self.render_json_response(response_data)
+
         except json.JSONDecodeError:
-            overall_error_message = "Invalid JSON in request body."
-            return self.json_error_response(overall_error_message, status=400)
-        except ValidationError as e:
-            return self.json_error_response(str(e), status=400)
-        except PromptValidationError as e:
-            return self.json_error_response(e, status=500)
-        return self.render_json_response(
-            {
-                "workflow_name": workflow_record.name,
-                "input_received": input_data,
-                "output": _to_serializable(response),
-            }
-        )
+            return self.json_error_response("Invalid JSON in request body", status=400)
+        except Exception as e:
+            return self.json_error_response(f"Workflow execution failed: {str(e)}", status=500)
 
 
 @csrf_exempt
@@ -447,10 +559,20 @@ def chat_view(request: Any) -> JsonResponse:
         if not message:
             return JsonResponse({"error": "Message is required"}, status=400)
 
-        client = LLMClient()
-        response = client.chat(message, session_id)
+        provider = app_settings.DEFAULT_LLM_PROVIDER
+        chat_model = create_llm_chat_client(provider)
 
-        return JsonResponse(response)
+        if chat_model is None:
+            return JsonResponse({"error": "Failed to initialize chat model"}, status=500)
+
+        response = chat_model.invoke(message)
+
+        if hasattr(response, "content"):
+            response_content = response.content
+        else:
+            response_content = str(response)
+
+        return JsonResponse({"response": response_content, "session_id": session_id})
     except Exception as e:
         return JsonResponse({"error": str(e)}, status=500)
 
@@ -473,3 +595,404 @@ def vector_search_view(request: Any) -> JsonResponse:
         return JsonResponse({"results": results})
     except Exception as e:
         return JsonResponse({"error": str(e)}, status=500)
+
+
+class ChatSessionListCreateView(JSONResponseMixin, ModelListMixin, ModelCreateMixin, View):
+    """
+    List all chat sessions or create a new chat session.
+
+    GET: Returns list of chat sessions (active by default)
+    POST: Creates a new chat session
+    """
+
+    model = ChatSession
+
+    def get_queryset(self):
+        """Get queryset of chat sessions, filtered by user and active status."""
+        queryset = self.model.objects.select_related("workflow", "user")
+
+        user = getattr(self.request, "user", None)
+        if user and user.is_authenticated:
+            queryset = queryset.filter(user=user)
+
+        include_archived = self.request.GET.get("include_archived", "false").lower() == "true"
+        if not include_archived:
+            queryset = queryset.filter(is_active=True)
+
+        return queryset.order_by("-updated_at")
+
+    def get(self, request, *args, **kwargs):
+        """List chat sessions."""
+        try:
+            sessions = self.get_queryset()
+
+            page = int(request.GET.get("page", 1))
+            page_size = int(request.GET.get("page_size", 20))
+            start = (page - 1) * page_size
+            end = start + page_size
+
+            sessions_data = []
+            for session in sessions[start:end]:
+                session_data = {
+                    "id": session.id,
+                    "session_id": session.session_id,
+                    "title": session.title,
+                    "workflow_id": session.workflow.id if session.workflow else None,
+                    "workflow_name": session.workflow.name if session.workflow else None,
+                    "is_active": session.is_active,
+                    "created_at": session.created_at.isoformat(),
+                    "updated_at": session.updated_at.isoformat(),
+                    "message_count": session.messages.filter(is_deleted=False).count(),
+                }
+                sessions_data.append(session_data)
+
+            return self.render_json_response(
+                {
+                    "sessions": sessions_data,
+                    "page": page,
+                    "page_size": page_size,
+                    "total": sessions.count(),
+                }
+            )
+
+        except Exception as e:
+            return self.json_error_response(str(e), status=500)
+
+    def post(self, request, *args, **kwargs):
+        """Create a new chat session."""
+        try:
+            data = json.loads(request.body)
+
+            session_id = data.get("session_id")
+            if session_id:
+                if isinstance(session_id, str):
+                    try:
+                        session_id = uuid.UUID(session_id)
+                    except ValueError:
+                        return self.json_error_response(
+                            f"Invalid session_id format: {session_id}. Must be a valid UUID.",
+                            status=400,
+                        )
+            else:
+                session_id = uuid.uuid4()
+
+            workflow = None
+            workflow_id = data.get("workflow_id")
+            if workflow_id:
+                try:
+                    workflow = Workflow.objects.get(id=workflow_id)
+                except Workflow.DoesNotExist:
+                    return self.json_error_response(
+                        f"Workflow with id {workflow_id} not found", status=400
+                    )
+
+            session_data = {
+                "session_id": session_id,
+                "title": data.get("title", ""),
+                "workflow": workflow,
+                "is_active": data.get("is_active", True),
+            }
+
+            user = getattr(request, "user", None)
+            if user and user.is_authenticated:
+                session_data["user"] = user
+
+            session = ChatSession.objects.create(**session_data)
+
+            return self.render_json_response(
+                {
+                    "id": session.id,
+                    "session_id": str(session.session_id),
+                    "title": session.title,
+                    "workflow_id": session.workflow.id if session.workflow else None,
+                    "is_active": session.is_active,
+                    "created_at": session.created_at.isoformat(),
+                    "updated_at": session.updated_at.isoformat(),
+                },
+                status=201,
+            )
+
+        except json.JSONDecodeError:
+            return self.json_error_response("Invalid JSON", status=400)
+        except Exception as e:
+            return self.json_error_response(str(e), status=500)
+
+
+class ChatSessionDetailView(
+    JSONResponseMixin, ModelRetrieveMixin, ModelUpdateMixin, ModelDeleteMixin, View
+):
+    """
+    Retrieve, update, or delete a specific chat session.
+
+    GET: Returns chat session details with message history
+    PUT/PATCH: Updates chat session
+    DELETE: Archives chat session (soft delete)
+    """
+
+    model = ChatSession
+
+    def get_object(self, session_id):
+        """Get chat session by session_id."""
+        try:
+            if isinstance(session_id, str):
+                try:
+                    session_id = uuid.UUID(session_id)
+                except ValueError:
+                    return None
+
+            user = getattr(self.request, "user", None)
+            queryset = self.model.objects.select_related("workflow", "user")
+
+            if user and user.is_authenticated:
+                return queryset.get(session_id=session_id, user=user)
+            else:
+                return queryset.get(session_id=session_id, user__isnull=True)
+
+        except self.model.DoesNotExist:
+            return None
+
+    def get(self, request, session_id, *args, **kwargs):
+        """Get chat session with message history."""
+        try:
+            session = self.get_object(session_id)
+            if not session:
+                return self.json_error_response("Chat session not found", status=404)
+
+            include_deleted = request.GET.get("include_deleted", "false").lower() == "true"
+            if include_deleted:
+                messages = session.messages.all().order_by("timestamp", "order")
+            else:
+                messages = session.messages.filter(is_deleted=False).order_by("timestamp", "order")
+
+            messages_data = []
+            for message in messages:
+                messages_data.append(
+                    {
+                        "id": message.id,
+                        "content": message.content,
+                        "role": message.role,
+                        "timestamp": message.timestamp.isoformat(),
+                        "token_count": message.token_count,
+                        "order": message.order,
+                        "is_deleted": message.is_deleted,
+                    }
+                )
+
+            return self.render_json_response(
+                {
+                    "id": session.id,
+                    "session_id": str(session.session_id),
+                    "title": session.title,
+                    "workflow_id": session.workflow.id if session.workflow else None,
+                    "workflow_name": session.workflow.name if session.workflow else None,
+                    "is_active": session.is_active,
+                    "created_at": session.created_at.isoformat(),
+                    "updated_at": session.updated_at.isoformat(),
+                    "messages": messages_data,
+                    "message_count": len([m for m in messages_data if not m["is_deleted"]]),
+                }
+            )
+
+        except Exception as e:
+            return self.json_error_response(str(e), status=500)
+
+    def put(self, request, session_id, *args, **kwargs):
+        """Update chat session."""
+        try:
+            session = self.get_object(session_id)
+            if not session:
+                return self.json_error_response("Chat session not found", status=404)
+
+            data = json.loads(request.body)
+
+            if "title" in data:
+                session.title = data["title"]
+            if "is_active" in data:
+                session.is_active = data["is_active"]
+            if "workflow_id" in data:
+                if data["workflow_id"]:
+                    try:
+                        workflow = Workflow.objects.get(id=data["workflow_id"])
+                        session.workflow = workflow
+                    except Workflow.DoesNotExist:
+                        return self.json_error_response(
+                            f"Workflow with id {data['workflow_id']} not found", status=400
+                        )
+                else:
+                    session.workflow = None
+
+            session.save()
+
+            return self.render_json_response(
+                {
+                    "id": session.id,
+                    "session_id": str(session.session_id),
+                    "title": session.title,
+                    "workflow_id": session.workflow.id if session.workflow else None,
+                    "is_active": session.is_active,
+                    "updated_at": session.updated_at.isoformat(),
+                }
+            )
+
+        except json.JSONDecodeError:
+            return self.json_error_response("Invalid JSON", status=400)
+        except Exception as e:
+            return self.json_error_response(str(e), status=500)
+
+    def delete(self, request, session_id, *args, **kwargs):
+        """Archive chat session (soft delete)."""
+        try:
+            session = self.get_object(session_id)
+            if not session:
+                return self.json_error_response("Chat session not found", status=404)
+
+            session.archive()
+
+            return self.render_json_response(
+                {
+                    "message": "Chat session archived successfully",
+                    "session_id": str(session.session_id),
+                    "is_active": session.is_active,
+                }
+            )
+
+        except Exception as e:
+            return self.json_error_response(str(e), status=500)
+
+
+class ChatHistoryView(JSONResponseMixin, View):
+    """
+    Manage chat history messages within a session.
+
+    GET: List messages for a session
+    POST: Add a new message to a session
+    DELETE: Soft delete a message
+    """
+
+    def get_session(self, session_id, user=None):
+        """Get chat session by session_id."""
+        try:
+            if isinstance(session_id, str):
+                try:
+                    session_id = uuid.UUID(session_id)
+                except ValueError:
+                    return None
+
+            queryset = ChatSession.objects.select_related("workflow")
+            if user and user.is_authenticated:
+                return queryset.get(session_id=session_id, user=user)
+            else:
+                return queryset.get(session_id=session_id, user__isnull=True)
+        except ChatSession.DoesNotExist:
+            return None
+
+    def get(self, request, session_id, *args, **kwargs):
+        """Get chat history for a session."""
+        try:
+            user = getattr(request, "user", None)
+            session = self.get_session(session_id, user)
+            if not session:
+                return self.json_error_response("Chat session not found", status=404)
+
+            include_deleted = request.GET.get("include_deleted", "false").lower() == "true"
+            if include_deleted:
+                messages = session.messages.all().order_by("timestamp", "order")
+            else:
+                messages = session.messages.filter(is_deleted=False).order_by("timestamp", "order")
+
+            messages_data = []
+            for message in messages:
+                messages_data.append(
+                    {
+                        "id": message.id,
+                        "content": message.content,
+                        "role": message.role,
+                        "timestamp": message.timestamp.isoformat(),
+                        "token_count": message.token_count,
+                        "order": message.order,
+                        "is_deleted": message.is_deleted,
+                    }
+                )
+
+            return self.render_json_response(
+                {
+                    "session_id": str(session_id) if session_id else None,
+                    "messages": messages_data,
+                    "total": len(messages_data),
+                }
+            )
+
+        except Exception as e:
+            return self.json_error_response(str(e), status=500)
+
+    def post(self, request, session_id, *args, **kwargs):
+        """Add a new message to the chat history."""
+        try:
+            user = getattr(request, "user", None)
+            session = self.get_session(session_id, user)
+            if not session:
+                return self.json_error_response("Chat session not found", status=404)
+
+            data = json.loads(request.body)
+            content = data.get("content", "")
+            role = data.get("role", "USER")
+
+            if not content:
+                return self.json_error_response("Message content is required", status=400)
+
+            last_message = session.messages.order_by("-order").first()
+            next_order = (last_message.order + 1) if last_message else 0
+
+            message = ChatHistory.objects.create(
+                session=session,
+                content=content,
+                role=role,
+                order=next_order,
+                token_count=data.get("token_count"),
+            )
+
+            session.save()
+
+            return self.render_json_response(
+                {
+                    "id": message.id,
+                    "content": message.content,
+                    "role": message.role,
+                    "timestamp": message.timestamp.isoformat(),
+                    "token_count": message.token_count,
+                    "order": message.order,
+                    "is_deleted": message.is_deleted,
+                },
+                status=201,
+            )
+
+        except json.JSONDecodeError:
+            return self.json_error_response("Invalid JSON", status=400)
+        except Exception as e:
+            return self.json_error_response(str(e), status=500)
+
+    def delete(self, request, session_id, message_id, *args, **kwargs):
+        """Soft delete a message."""
+        try:
+            user = getattr(request, "user", None)
+            session = self.get_session(session_id, user)
+            if not session:
+                return self.json_error_response("Chat session not found", status=404)
+
+            try:
+                message = session.messages.get(id=message_id)
+                message.soft_delete()
+
+                return self.json_response(
+                    {
+                        "message": "Chat message deleted successfully",
+                        "message_id": message_id,
+                        "is_deleted": message.is_deleted,
+                    }
+                )
+
+            except ChatHistory.DoesNotExist:
+                return self.json_error_response("Message not found", status=404)
+
+        except Exception as e:
+            return self.json_error_response(str(e), status=500)
