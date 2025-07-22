@@ -38,6 +38,25 @@ urlpatterns = [
     ),
     path("logs/", views.InteractionLogListCreateView.as_view(), name="log-list-create"),
     path("logs/<uuid:pk>/", views.InteractionLogDetailView.as_view(), name="logs-detail"),
+    path(
+        "chat/sessions/", views.ChatSessionListCreateView.as_view(), name="chat-session-list-create"
+    ),
+    path(
+        "chat/sessions/<str:session_id>/",
+        views.ChatSessionDetailView.as_view(),
+        name="chat-session-detail",
+    ),
+    path(
+        "chat/sessions/<str:session_id>/messages/",
+        views.ChatHistoryView.as_view(),
+        name="chat-history",
+    ),
+    path(
+        "chat/sessions/<str:session_id>/messages/<int:message_id>/",
+        views.ChatHistoryView.as_view(),
+        name="chat-history-delete",
+    ),
+    # Legacy endpoints (for backward compatibility)
     path("chat/", views.chat_view, name="chat-view"),
     path("vector-search/", views.vector_search_view, name="vector-search-view"),
 ]

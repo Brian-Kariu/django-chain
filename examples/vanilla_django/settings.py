@@ -60,10 +60,18 @@ WSGI_APPLICATION = "vanilla_django.wsgi.application"
 # Database
 DATABASES = {
     "default": {
-        "ENGINE": "django.db.backends.sqlite3",
-        "NAME": os.path.join(BASE_DIR, "db.sqlite3"),
+        "ENGINE": "django.db.backends.postgresql",
+        "NAME": os.getenv("DB_NAME", "django_chain"),
+        "USER": os.getenv("DB_USER", "chain_user"),
+        "PASSWORD": os.getenv("DB_PASSWORD", "chain_pass"),
+        "HOST": os.getenv("DB_HOST", "localhost"),
+        "PORT": os.getenv("DB_PORT", "5432"),
+        "CONN_MAX_AGE": 60,
+        "CONN_HEALTH_CHECKS": True,
+        "DISABLE_SERVER_SIDE_CURSORS": True,
     }
 }
+
 
 # Password validation
 AUTH_PASSWORD_VALIDATORS = [
@@ -112,7 +120,11 @@ DJANGO_LLM_SETTINGS = {
     },
     "ENABLE_LLM_LOGGING": True,
     "LLM_LOGGING_LEVEL": "DEBUG",
-    "MEMORY": {"STORE": "INMEMORY"},
+    "MEMORY": {
+        "PROVIDER": "django",
+        "DEFAULT_TYPE": "buffer",
+        "WINDOW_SIZE": 10,
+    },
     "CHAIN": {
         "DEFAULT_OUTPUT_PARSER": "str",
         "ENABLE_MEMORY": True,

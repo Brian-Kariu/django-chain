@@ -21,15 +21,37 @@ class DjangoChainError(Exception):
             self.message = self.message + f"Expected {expected_format}. "
         if hasattr(self, "additional_message"):
             self.message = self.message + f"{additional_message}"
-        super().__init__(self.message)
+        super().__init__(self.value, self.message)
 
 
 class LLMProviderAPIError(DjangoChainError):
     """Raised when there's an issue communicating with the LLM provider."""
 
+    def __init__(
+        self,
+        value,
+        message: str = f"Error with LLM Vendor: ",
+        expected_format: str = "",
+        additional_message: str | tuple[str] = "",
+    ):
+        self.message = f"{message}"
+        self.value = value
+        super().__init__(self.value, self.message)
+
 
 class LLMResponseError(DjangoChainError):
     """Raised when the LLM returns an unexpected or invalid response."""
+
+    def __init__(
+        self,
+        value,
+        message: str = f"Error during with LLM response Generation: ",
+        expected_format: str = "",
+        additional_message: str | tuple[str] = "",
+    ):
+        self.message = f"{message}"
+        self.value = value
+        super().__init__(self.value, self.message)
 
 
 class PromptValidationError(DjangoChainError, ValueError):
@@ -63,12 +85,34 @@ class WorkflowValidationError(DjangoChainError, ValueError):
 class ChainExecutionError(DjangoChainError):
     """Raised for general errors during LangChain chain execution."""
 
+    def __init__(
+        self,
+        value,
+        message: str = f"Error during Langchain Execution: ",
+        expected_format: str = "",
+        additional_message: str | tuple[str] = "",
+    ):
+        self.message = f"{message}"
+        self.value = value
+        super().__init__(self.value, self.message)
+
 
 class VectorStoreError(DjangoChainError):
     """Raised for errors during vector store operations."""
 
+    def __init__(
+        self,
+        value,
+        message: str = f"Error with Vector Store: ",
+        expected_format: str = "",
+        additional_message: str | tuple[str] = "",
+    ):
+        self.message = f"{message}"
+        self.value = value
+        super().__init__(self.value, self.message)
 
-class MissingDependencyError(DjangoChainError):
+
+class MissingDependencyError(Exception):
     """
     Raised when a required dependency for a specific integration is not installed.
 
@@ -82,7 +126,7 @@ class MissingDependencyError(DjangoChainError):
         self.integration = integration
         self.package = package
         self.hint = f"Try running: pip install django-chain[{integration}]"
-        message = (
+        self.message = (
             f"Required {integration} integration package '{package}' is not installed.\n{self.hint}"
         )
-        super().__init__(message)
+        super().__init__(self.message)

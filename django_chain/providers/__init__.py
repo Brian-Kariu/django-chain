@@ -13,6 +13,7 @@ from typing import Type
 from django.conf import settings
 from langchain_core.embeddings import Embeddings
 from langchain_core.language_models import BaseChatModel
+from langchain_core.vectorstores import VectorStore
 
 from django_chain.exceptions import MissingDependencyError
 
@@ -85,3 +86,34 @@ def get_embedding_model(provider: str, **kwargs) -> Embeddings:
         return get_fake_embedding_model(**kwargs)
     else:
         raise ValueError(f"Unsupported embedding provider: {provider}")
+
+
+def get_vector_store(store_type: str, embedding_function: Embeddings, **kwargs) -> VectorStore:
+    """
+    Get a vector store instance for the specified type.
+
+    Args:
+        store_type: The vector store type (e.g., 'pgvector', 'chroma')
+        embedding_function: The embedding function to use
+        **kwargs: Additional arguments for the vector store
+
+    Returns:
+        A configured vector store instance
+
+    Raises:
+        ImportError: If the required store package is not installed
+        ValueError: If the store type is not supported
+        NotImplementedError: If the store type is not yet implemented
+    """
+    if store_type == "pgvector":
+        from django_chain.providers.pgvector import get_pgvector_store
+
+        return get_pgvector_store(embedding_function=embedding_function, **kwargs)
+    elif store_type == "chroma":
+        # TODO: Implement chroma provider
+        raise NotImplementedError("Chroma vector store is not yet implemented")
+    elif store_type == "pinecone":
+        # TODO: Implement pinecone provider
+        raise NotImplementedError("Pinecone vector store is not yet implemented")
+    else:
+        raise ValueError(f"Unsupported vector store type: {store_type}")

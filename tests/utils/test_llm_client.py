@@ -86,7 +86,7 @@ def test_create_llm_embedding_client(provider, input, expected, caplog):
     if provider == "incorrect":
         result = create_llm_embedding_client(provider, **input)
         result = create_llm_embedding_client(provider, **input)
-        assert "Error importing LLM Provider" in caplog.text
+        assert "Error importing Embedding Provider" in caplog.text
 
     if provider == "fake" and expected != "Error":
         result = create_llm_embedding_client(provider, **input)
@@ -117,7 +117,7 @@ def test_to_serializable_other_types():
 
 def test_to_serializable_custom_object():
     class Foo:
-        pass
+        value = "something"
 
     result = _to_serializable(Foo())
     assert isinstance(result, str)
@@ -202,13 +202,15 @@ class TestLoggingHandler:
     @pytest.mark.parametrize(
         "serialized,expected",
         [
-            ({"name": {"name": "fake"}}, {"name": "fake"}),
-            ({"kwargs": {"model_name": {"name": "fake"}}}, {"name": "fake"}),
-            ({"kwargs": {"model": {"name": "fake"}}}, {"name": "fake"}),
+            ("fake", "fake"),
+            ("openai", "openai"),
+            ("google", "google"),
+            ("huggingface", "huggingface"),
+            ("unknown", "unknown"),
         ],
     )
     def test_get_llm_model_name(self, serialized, expected):
-        result = self.instance._get_llm_model_name_from_serialized(serialized)
+        result = self.instance._extract_provider_from_class_name(serialized)
         assert result == expected
 
     @pytest.mark.parametrize(
@@ -250,7 +252,7 @@ class TestLoggingHandler:
 
     def test_on_llm_end(self):
         run_id = uuid4()
-        self.instance.start_times[run_id] = 2.0
+        self.instance.start_time[run_id] = 2.0
 
         response = MockLLMResponse(
             generations=[
@@ -266,11 +268,11 @@ class TestLoggingHandler:
 
     def test_on_llm_error(self):
         run_id = uuid4()
-        self.instance.start_times[run_id] = 12.0
+        self.instance.start_time[run_id] = 12.0
 
         error = Exception("A simulated LLM error occurred.")
 
         self.instance.on_llm_error(error=error, run_id=run_id)
 
         assert self.log.status == "failure"
-        assert self.log.error_message == "error_message"
+        assert self.log.error_message == "A simulated LLM error occurred."

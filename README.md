@@ -79,7 +79,7 @@ DJANGO_LLM_SETTINGS = {
     },
     "ENABLE_LLM_LOGGING": True,
     "LLM_LOGGING_LEVEL": "DEBUG",
-    "MEMORY": {"STORE": "INMEMORY"}, # Other connection related configs
+    "MEMORY": {"PROVIDER": "django"},  # Use Django ChatHistory model as primary storage
     "CHAIN": {
         "DEFAULT_OUTPUT_PARSER": "str",
         "ENABLE_MEMORY": True,

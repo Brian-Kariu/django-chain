@@ -21,73 +21,6 @@ from django.views.decorators.csrf import csrf_exempt
 
 from django_chain.models import Prompt
 from django_chain.models import Workflow
-from django_chain.utils.llm_client import create_llm_chat_client
-
-
-class LLMGenerationMixin:
-    """
-    Mixin for LLM model and workflow instantiation in views.
-
-    Provides methods to get a model, invoke a runnable, and dispatch requests for LLM generation.
-    """
-
-    def get_model(self, **kwargs) -> Any:
-        """
-        Get a workflow chain for LLM generation.
-
-        Args:
-            **kwargs: Arguments for prompt, model, and workflow selection.
-
-        Returns:
-            Any: The workflow chain instance.
-        """
-        prompt_info = kwargs.pop("prompt")
-        self.prompt = Prompt.objects.filter(id=prompt_info).first()
-
-        self.model_args = kwargs.pop("model")
-        self.provider = self.model_args.pop("provider")
-        self.model = create_llm_chat_client(self.provider, **self.model_args)
-        # NOTE: We can add the vectorstore, embedding and other third party integrations here
-
-        workflow_info = kwargs.pop("workflow")
-        workflow = Workflow.objects.filter(id=workflow_info).first
-        self.workflow_chain = workflow.get_chain()
-
-        self.workflow_chain(self.prompt, self.provider, self.model_args)
-        return self.workflow_chain
-
-    def invoke_runnable(self, request, *args, **kwargs) -> Any:
-        """
-        Invoke a runnable with user input.
-
-        Args:
-            request (HttpRequest): The HTTP request object.
-            *args: Additional arguments.
-            **kwargs: Must include 'runnable' and 'input'.
-
-        Returns:
-            Any: The output from the runnable.
-        """
-        runnable = kwargs["runnable"]
-        user_input = kwargs["input"]
-        output = runnable.invoke(user_input)
-        return output
-
-    def dispatch(self, request, *args, **kwargs):
-        """
-        Custom dispatch to handle LLM invocation for POST requests.
-
-        Args:
-            request (HttpRequest): The HTTP request object.
-            *args: Additional arguments.
-            **kwargs: Additional keyword arguments.
-
-        Returns:
-            HttpResponse: The response from the view.
-        """
-        if request.method == "post" and "invoke" in request.PATH:
-            kwargs["runnable"] = self.get_model(**kwargs)
-            return super().dispatch(request, *args, **kwargs)
 
 
 class JSONResponseMixin:
@@ -298,7 +231,7 @@ class ModelDeleteMixin:
         obj.delete()
 
 
-class ModelActivateDeactivateMixin:
+class ModelActivateDeactivateMixin(JSONResponseMixin, ModelRetrieveMixin):
     """
     Mixin for handling activation/deactivation of models with an 'is_active' field.
     Requires: `model_class`, `serializer_method`.
@@ -321,7 +254,7 @@ class ModelActivateDeactivateMixin:
         """
         obj = self.get_object(pk)
         if obj is None:
-            return self.json_error_response(f"{self.model_class.__name__} not found.", status=404)
+            return self.json_error_response(f"{self.model_class} not found.", status=404)
 
         try:
             with transaction.atomic():
