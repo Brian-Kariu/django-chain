@@ -1,3 +1,10 @@
+## 0.2.0a4 (2025-07-24)
+
+### Feat
+
+- major refactor to langchain api
+- added chats api
+
 ## 0.2.0a3 (2025-07-04)
 
 ### Feat
